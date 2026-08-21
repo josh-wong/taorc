@@ -1,0 +1,30 @@
+# Secrets
+.env
+.env.*
+Secrets.plist
+*.pem
+*.key
+
+# IDE and editor config
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+
+# Python
+__pycache__/
+.venv/
+
+# Working notes taken while reading the source book — never enters the repo's real content
+notes/
+
+# Raw eval run outputs are large and not useful working context; read RESULTS.md instead
+evals/results/*/raw/

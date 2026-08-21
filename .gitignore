@@ -26,14 +26,14 @@ npm-debug.log*
 # Claude Code local settings
 .claude/settings.local.json
 
-# Node (in case example/test tooling is added)
-node_modules/
-
-# Python (in case example/test tooling is added)
+# Python
 __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Working notes taken while reading the source book — never released (see AGENTS.md, "Legal and copyright considerations")
+notes/
 
 # Misc
 *.tmp
