@@ -12,14 +12,14 @@ Four components, one join key.
 
 | Component | What it is | Why it exists |
 |---|---|---|
-| **Catalog** | `catalog/rules.yaml` – the machine-readable registry of ~70 rule IDs | Single source of truth for IDs. Everything else references it; CI enforces referential integrity |
+| **Catalog** | `catalog/rules.yaml` – the machine-readable registry of all 73 rule IDs | Single source of truth for IDs. Everything else references it; CI enforces referential integrity |
 | **Skill** | `skills/readable-code/` – hand-written `SKILL.md` + `references/` | The product. Prose quality matters, so it is authored, not generated |
 | **Adapters** | Generated managed blocks + manifests for 10+ harnesses | Distribution. Generated because they must be byte-identical |
 | **Linter** | `taorc-lint`, 10 high-precision rules, bundled in the skill's `scripts/` | Objective scoring for evals; a fix-loop the agent can close |
 
 The join key is the **rule ID** (`N7`, `C4`, `X2`). It appears in the catalog, in the skill prose, in linter output, in eval scores, and in agent review findings. If an ID appears anywhere and is not in the catalog, CI fails.
 
-**Generation policy**: generate what must be *identical* (managed blocks, version fields, the condensed prompt). Hand-write what must *read well* (`SKILL.md`, `references/`). Generated prose reads like generated prose, and this project's whole thesis is that readable output is worth the effort.
+**Generation policy**: generate what must be *identical* (managed blocks, version fields, manifest metadata). Hand-write what must *read well* (`SKILL.md`, `references/`, `prompts/`). Generated prose reads like generated prose, and this project's whole thesis is that readable output is worth the effort.
 
 ## 2. Repository layout
 
@@ -55,8 +55,11 @@ taorc/
 │           └── typescript/*.yml
 │
 ├── prompts/
-│   ├── system-prompt.md           # <=800 tokens, generated
-│   └── system-prompt-mini.md      # <=150 tokens, generated
+│   ├── system-prompt.md           # <=800 tokens, hand-written (6.1)
+│   └── system-prompt-mini.md      # <=150 tokens, hand-written (6.1)
+│
+├── commands/
+│   └── taorc-review.md            # /taorc-review slash command (v1.0)
 │
 ├── output-styles/
 │   └── readable-code-review.md    # Claude Code output style (v1.0 per Q6)
@@ -72,8 +75,13 @@ taorc/
 │       ├── positive/              # must fire
 │       └── negative/              # must NOT fire (false-positive suite)
 │
+├── docs/
+│   └── harness-verification.md    # the M7 record: what was tested, where, when
+│
 ├── evals/
 │   ├── scenarios.json             # 10 code-writing tasks
+│   ├── triggers.json              # 100-prompt trigger suite (60 pos / 40 neg)
+│   ├── run_triggers.py            # tier-1 proxy classifier (§10.4)
 │   ├── run_bench.py               # baseline vs skill, N models
 │   ├── judge.py                   # blind pairwise + rubric
 │   ├── score.py                   # automated metrics from taorc-lint
@@ -124,7 +132,7 @@ rules:
       The reader's alternative is to trace the value to its source. That is the
       exact cost the Fundamental Theorem tells you to minimize.
     chapter: 2
-    severity: warning        # error | warning | suggestion
+    severity: suggestion     # error | warning | suggestion
     lintable: true
     lint_rule: taorc-n7-unit-free-name
     applies_to: [all]
@@ -138,7 +146,11 @@ rules:
 ```
 
 Required: `id`, `slug`, `category`, `title`, `instruction`, `chapter`, `severity`, `lintable`.
-`chapter: 0` marks original content (the `X` category), which has no book source.
+
+- `chapter: 0` marks original content (the `X` category), which has no book source.
+- `severity` ranks findings in review mode and sets the linter's level for lintable rules. CI asserts the two never disagree: a lint rule's `severity` must equal its catalog entry's.
+- `applies_to` is a list of language identifiers (`python`, `typescript`, `go`, `rust`, `java`, `csharp`) or the literal `all`. It exists for the handful of rules that are language-specific — a rule about docstring conventions does not apply to Go. Defaults to `[all]` when omitted.
+- `lint_rule` is required when `lintable: true` and must name a rule file that exists under `scripts/rules/`; CI checks both directions.
 
 ### 3.2 Categories and budget
 
@@ -183,7 +195,9 @@ The full 73 one-liners live in `SKILL.md`, not in references. A rule the agent h
 
 ### 4.2 Frontmatter
 
-```yamlname: readable-code
+```yaml
+---
+name: readable-code
 description: >
   Write, comment, and review code so the next reader understands it in the least
   time. Applies on any code-writing, editing, refactoring, or code-review task,
@@ -197,7 +211,9 @@ license: MIT
 metadata:
   version: "1.0.0"
   source: "The Art of Readable Code, Boswell & Foucher, O'Reilly 2011"
-  homepage: "https://github.com/josh-wong/taorc"```
+  homepage: "https://github.com/josh-wong/taorc"
+---
+```
 
 Design notes on `description`—this is the highest-leverage 1,000 characters in the project:
 - It leads with the *outcome*, so the model can judge relevance to any task.
@@ -232,13 +248,20 @@ Mode is inferred, never asked. If genuinely ambiguous, default to `write` for ne
                            where most of the measured gain comes from.
 
 4. VERIFY (if the linter is available)
-                           `python scripts/taorc_lint.py --changed`  (relative to the skill root)
+                           Resolve the skill root the same way the managed block
+                           does—first existing of `.claude/skills/readable-code/`,
+                           `.agents/skills/readable-code/`,
+                           `.github/skills/readable-code/`, `skills/readable-code/`
+                           —then run `python <root>/scripts/taorc_lint.py --changed`.
+                           If none exists, skip this step; do not search further.
                            Fix findings. Re-run. Repeat until clean or until a
                            finding is a justified false positive—say which.
 
 5. REPORT                  State what you deliberately did NOT change and why.
                            This is the guardrail that keeps diffs narrow (X1).
 ```
+
+This loop is for `write` and `refactor`. Review mode does not run it — steps 2 and 4 would modify files, which §4.3 forbids — and follows `references/review-checklist.md` instead.
 
 Step 5 is load-bearing. Giving the agent a sanctioned way to *say* "I noticed `utils.py` is a junk drawer and left it alone" removes the pressure to fix it.
 
@@ -250,7 +273,7 @@ Ten questions, ordered by how often agents fail them:
 2. Does any comment narrate my own plan—"Step 1", "First, we"? Delete it. (C2, X7)
 3. Would a new reader know the unit of every number I named? (N7)
 4. Is any name an empty word—`data`, `result`, `handler`, `process`? (N1)
-5. Is there a comment explaining *why*, where the reason is not obvious? Is it missing? (C7)
+5. Is any non-obvious decision left unexplained? Add the *why*. (C7)
 6. Can any nested block become a guard clause? (F4)
 7. Is any boolean expression more than three terms? (E1)
 8. Does any function do more than one thing my one-sentence description can cover? (S4)
@@ -263,8 +286,9 @@ Each pointer states its trigger. Generic "see references/" is ignored by agents.
 
 ```
 Read references/comments.md      before writing or editing any comment or docstring.
-Read references/naming.md        when naming a public API, or when a name is
-                                 contested in review.
+Read references/naming.md        when naming a public API, when a name is
+                                 contested in review, or for any layout or
+                                 alignment question (the A rules live here).
 Read references/control-flow.md  when a function exceeds two levels of nesting or
                                  a condition exceeds three terms.
 Read references/structure.md     before extracting a function or splitting a file.
@@ -273,34 +297,38 @@ Read references/ai-code-tells.md when asked to de-slop, humanize, or clean up
                                  AI-generated code.
 Read references/language-map.md  when the language is Go, Rust, Java, or C#.
 Read references/review-checklist.md  at the start of every review-mode task.
+Read references/chapter-map.md   only when the user asks where a rule comes
+                                 from. It is an attribution artifact for humans,
+                                 not working material — never load it to decide
+                                 how to write code.
 ```
 
 ## 5. `references/ai-code-tells.md`
 
 The single most differentiating file in the repo, and entirely original work. Structure: one row per tell, each mapped to a rule ID, so a de-slopping request resolves into catalog rules rather than vibes.
 
-| Tell | Rule | Fix |
-|---|---|---|
-| Comment restates the next line | C1 | Delete |
-| `// Step 1:` / `// First, we...` plan narration | C2 | Delete |
-| `# ===== HELPERS =====` banner | C3 | Delete; if the file needs sections, it needs splitting |
-| Emoji in comments, log lines, or output | C4 | Delete |
-| Docstring restates the signature, adds nothing | C5 | Delete or replace with why/constraints |
-| `# In a real implementation, you would...` | C6 | Delete or convert to a real `TODO(owner):` |
-| Commented-out code left behind | C8 | Delete; git remembers |
-| `data`, `result`, `output`, `info`, `item` | N1 | Name the thing |
-| `handler`, `processor`, `manager`, `helper` | N2 | Name the action |
-| `utils.py` / `helpers.ts` accumulating unrelated functions | S2 | Name the domain concept |
-| Bare `timeout`, `size`, `limit` | N7 | Add the unit or bound |
-| Single-use helper abstracted "for reusability" | S6 | Inline it |
-| Try/except wrapped around code that cannot throw | S7 | Delete |
-| Reimplemented `groupby` / `Counter` / `zip` | S8 | Use the library |
-| Intermediate variable that exists only to be returned | V1 | Return directly |
-| `if x == True:` / `if len(x) > 0:` | E4 | `if x:` |
-| Test named `test_1`, `test_basic`, `test_works` | T3 | Name the scenario and expectation |
-| Hedging comment: "This should probably..." | C9 | Decide, or file a real TODO |
+| Tell | Rule | Lint | Fix |
+|---|---|---|---|
+| Comment restates the next line | C1 | ✓ | Delete |
+| `// Step 1:` / `// First, we...` plan narration | C2 | ✓ | Delete |
+| `# ===== HELPERS =====` banner | C3 | ✓ | Delete; if the file needs sections, it needs splitting |
+| Emoji in comments, log lines, or output | C4 | ✓ | Delete |
+| Docstring restates the signature, adds nothing | C5 | | Delete or replace with why/constraints |
+| `# In a real implementation, you would...` | C6 | ✓ | Delete or convert to a real `TODO(owner):` |
+| Commented-out code left behind | C8 | ✓ | Delete; git remembers |
+| `data`, `result`, `output`, `info`, `item` | N1 | ✓ | Name the thing |
+| `handler`, `processor`, `manager`, `helper` | N2 | | Name the action |
+| `utils.py` / `helpers.ts` accumulating unrelated functions | S2 | | Name the domain concept |
+| Bare `timeout`, `size`, `limit` | N7 | ✓ | Add the unit or bound |
+| Single-use helper abstracted "for reusability" | S6 | | Inline it |
+| Try/except wrapped around code that cannot throw | S7 | | Delete |
+| Reimplemented `groupby` / `Counter` / `zip` | S8 | | Use the library |
+| Intermediate variable that exists only to be returned | V1 | | Return directly |
+| `if x == True:` / `if len(x) > 0:` | E4 | | `if x:` |
+| Test named `test_1`, `test_basic`, `test_works` | T3 | ✓ | Name the scenario and expectation |
+| Hedging comment: "This should probably..." | C9 | | Decide, or file a real TODO |
 
-Roughly half of these are detectable by `taorc-lint`. The table marks which.
+The **Lint** column marks the nine `taorc-lint` catches; the rest need the agent's judgment.
 
 ## 6. Distribution
 
@@ -315,8 +343,10 @@ Roughly half of these are detectable by `taorc-lint`. The table marks which.
 | `.github/copilot-instructions.md` | block |
 | `.github/instructions/readable-code.instructions.md` | `applyTo: "**/*"` frontmatter, then block |
 | `.clinerules/readable-code.md`, `.windsurf/rules/readable-code.md` | block |
-| `prompts/system-prompt.md` | condensed from catalog, not the block |
+| — | `prompts/*.md` are **not** generated; see below |
 | `.claude-plugin/*`, `.codex-plugin/*`, `gemini-extension.json` | version field sync only |
+
+**The prompts are hand-written.** Condensing 73 rules into 800 tokens is an editorial judgment about which rules survive, not a mechanical transform, and §1's policy says prose that must read well is authored. `build.py` does not touch `prompts/`; CI still enforces their token budgets (check 4) and that every ID they cite exists (check 2). Treating them as generated would have meant inventing a selection algorithm nobody could tune.
 
 Managed block markers:
 
@@ -376,13 +406,50 @@ first existing path wins—`.claude/skills/readable-code/SKILL.md`,
 
 `output-styles/readable-code-review.md`:
 
-```yamlname: Readable Code Review
+```yaml
+---
+name: Readable Code Review
 description: Reports readability findings as taorc rule citations with concrete fixes.
-keep-coding-instructions: true```
+keep-coding-instructions: true
+---
+```
 
 `keep-coding-instructions: true` is required—this changes how Claude *reports*, not whether it engineers. The body constrains review output to the §7 finding format and forbids prose preamble around findings.
 
 Scope note: this is Claude-only and cosmetic. It ships because it is cheap, and it is explicitly not part of the eval matrix.
+
+### 6.5 The `/taorc-review` command
+
+Ships in v1.0. `commands/taorc-review.md` is a Claude Code plugin command that puts the skill into `review` mode against the current diff, or an explicit target if one is given:
+
+```yaml
+---
+description: Review the current diff for readability against the taorc catalog.
+argument-hint: "[file|directory|PR#]  (default: the current diff)"
+---
+```
+
+The body is thin on purpose—it activates the skill, names the mode, and defers everything else to `SKILL.md` and `references/review-checklist.md`. Duplicating catalog content into the command would create a second place for the rules to drift.
+
+It is Claude-Code-only packaging, not a capability. Review mode is reachable in every harness through natural language ("review this for readability"), which is how §4.3 infers it; the command is a shortcut, and nothing in the product depends on it.
+
+### 6.6 Harness verification (M7)
+
+Ten harnesses is not ten integrations. There are only **three delivery mechanisms**:
+
+| Mechanism | Harnesses |
+|---|---|
+| Agent Skills runtime reads `SKILL.md` | Claude Code, Copilot, Cursor, Codex, Gemini CLI, opencode, ~30 more |
+| Managed block in an instructions file | `AGENTS.md`, `CLAUDE.md`, `.mdc`, `.instructions.md`, `.clinerules` readers |
+| Pasted system prompt | anything else |
+
+The only per-harness variable is *where the file goes*, which CI check 9 asserts for all ten. What CI cannot assert is that the harness reads the file and behaves differently — that needs a human in each product.
+
+So the release gate is **four manual smoke tests, one per delivery path plus the two highest-traffic products**: Claude Code (skills runtime), VS Code Copilot (skills + `.instructions.md`), Cursor (`.mdc`), and one `AGENTS.md` reader (Codex or opencode). Each runs the same two prompts — one implicit code-writing task, one explicit "review this for readability" — and records the harness version and date in `docs/harness-verification.md`.
+
+"Took effect" needs a definition, because only some harnesses announce that a skill loaded. The observable test is behavioral, and works everywhere: the explicit prompt must produce findings in the §7 format with real rule IDs. A harness that outputs prose review with no IDs has not loaded the skill, whatever its UI claims.
+
+**Why not claim ten.** Publishing "10 harnesses verified working" on the strength of file placement would be the same overclaim §10.5 forbids in the eval results. M7 therefore reads as two numbers: 10 with automated placement checks, 4 verified end-to-end. The README says exactly that.
 
 ## 7. Finding format
 
@@ -415,7 +482,7 @@ taorc_lint.py
   ├─ implements C1 (comment-echoes-code) in Python over ast-grep's
   │  comment-node JSON                                              (1 of 10 rules)
   ├─ merges, sorts, formats (text | json)
-  └─ exits 1 if any error-severity finding, else 0
+  └─ exits 0 unless `--fail-on` is passed (see §8.6)
 ```
 
 If `ast-grep` is not on PATH, it prints an install hint and exits 0—never blocks a build over a missing optional tool.
@@ -428,7 +495,7 @@ All are high-precision by construction—each fires on a syntactic signature tha
 
 | ID | Rule | Detection | Sev |
 |---|---|---|---|
-| C1 | Comment echoes the code below it | Comment tokens are a subsequence of the next statement's identifiers, after case/underscore splitting and stopword removal | warning |
+| C1 | Comment echoes the code below it | See §8.2.1 | warning |
 | C2 | Plan narration comment | Comment matches `^\W*(step \d|first,|next,|then,|finally,|now (we\|let's))` | warning |
 | C3 | Banner comment | Comment matches `[=\-*_#]{5,}` | warning |
 | C4 | Emoji in comment or string literal | Unicode emoji ranges | warning |
@@ -439,7 +506,41 @@ All are high-precision by construction—each fires on a syntactic signature tha
 | N9 | Negated boolean name | Name matches `^(is\|has\|can)?_?(not\|no\|non\|dont\|cant\|disable)` on a boolean-valued declaration | suggestion |
 | T3 | Uninformative test name | Test function name matches `^test_?(\d+\|it\|works\|basic\|main\|case\d*)?$` | suggestion |
 
-Severities are deliberately conservative: seven `suggestion`, three `warning`, **zero `error`**. Nothing in v1 fails a build by default. A linter that blocks CI on a naming opinion gets uninstalled.
+Severities are deliberately conservative: four `suggestion`, six `warning`, **zero `error`**. Nothing in v1 fails a build by default. A linter that blocks CI on a naming opinion gets uninstalled.
+
+#### 8.2.1 C1 in detail
+
+C1 is the highest-value rule in the set and the only one that is not a pattern match, so it gets a specified algorithm rather than a description. Left vague, an implementer guesses a threshold and ships false positives, which per PRD R6.4 discredits the whole tool.
+
+```
+1. Take the comment text and the next executable statement.
+2. Tokenize both: lowercase, split camelCase and snake_case, strip punctuation.
+3. From the comment's tokens drop language keywords and stopwords
+   (the, a, an, this, that, to, of, and, or, then, we, it, is, are, in, on,
+   for, with, through, each, all). Call what remains the CONTENT tokens.
+4. If fewer than 2 content tokens, do not fire. "hack" and "why?" carry
+   meaning this rule cannot judge.
+5. Drop narration verbs (loop, iterate, increment, decrement, set, get,
+   create, initialize, return, call, check, add, remove, update, build,
+   make, do). If nothing remains, do not fire.
+6. Suffix-stem both sides (s, es, ed, ing, er). Fire when >= 80% of the
+   remaining comment tokens appear among the statement's identifier tokens.
+```
+
+**Step 5 is what makes the rule work at all.** The classic echo comment always leads with a verb the code never names — `increment`, `loop`, `set` — and that verb alone drags coverage below any useful threshold. Strip narration verbs and the same comment scores 100%; leave them in and C1 fires on almost nothing, which is the failure mode this spec exists to prevent.
+
+Stemming (step 6) is required for the same reason: `counter` and `count` are the same word to a reader, and a rule that cannot see that misses the most common form of the tell.
+
+| Comment | Next statement | Content → post-verb → stemmed | Score | |
+|---|---|---|---|---|
+| `# Loop through the users` | `for user in users:` | {loop, users} → {users} → {user} vs {user} | 100% | fires |
+| `# increment the retry counter` | `retry_count += 1` | {increment, retry, counter} → {retry, counter} → {retry, count} vs {retry, count} | 100% | fires |
+| `# retry after 3 failures — upstream rate-limits` | `retry_count += 1` | 8 content tokens, 1 matched | 13% | no fire |
+| `# hack` | anything | 1 content token | — | no fire (step 4) |
+
+The third row is the one that matters: a *why* comment sitting on the same line as a *what* comment must survive. Every negative fixture is built from that shape.
+
+Both the 80% threshold and the two word lists are starting values, tuned against `lint/fixtures/negative/` until the false-positive rate clears PRD M5. Record whatever they end up as here — a threshold nobody can trace back to a fixture is a threshold that gets changed on a hunch.
 
 ### 8.3 Rule file shape
 
@@ -461,12 +562,31 @@ rule:
 
 Every rule needs both:
 
-- `fixtures/positive/<lang>/<rule>.{py,ts}` – must fire, exact line asserted.
-- `fixtures/negative/<lang>/<rule>.{py,ts}` – must **not** fire. This is the important half. Each negative fixture encodes a legitimate use: a `tmp` in a three-line function, a comment that looks redundant but records a non-obvious constraint, a `size` in a project with a `Bytes` newtype, a genuinely descriptive `test_main`.
+- `lint/fixtures/positive/<lang>/<rule>.{py,ts}` – must fire, exact line asserted.
+- `lint/fixtures/negative/<lang>/<rule>.{py,ts}` – must **not** fire. This is the important half. Each negative fixture encodes a legitimate use: a `tmp` in a three-line function, a comment that looks redundant but records a non-obvious constraint, a `size` in a project with a `Bytes` newtype, a genuinely descriptive `test_main`.
 
 CI asserts exact finding sets on both. PRD metric M5 (≤5% false-positive rate) is measured against the negative suite.
 
-### 8.5 CLI
+### 8.5 Suppressions
+
+Referenced in §3.3 and §13 but never defined, so: a suppression is a trailing or preceding comment naming the rule and a reason.
+
+```python
+data = json.loads(raw)  # taorc-ignore: N1 — matches the wire format's field name
+```
+
+```
+# taorc-ignore-next: C1 — the restatement is deliberate; see ADR-014
+```
+
+Rules:
+- The rule ID is required. A bare `taorc-ignore` suppresses nothing.
+- The reason is required. `taorc_lint.py` reports a suppression with no reason as its own finding — an unexplained suppression is how a rule quietly stops applying.
+- `--show-suppressed` lists them; `--fail-on` never counts them.
+
+The repo's own `examples/` use these, which doubles as the test that suppression works (§13).
+
+### 8.6 CLI
 
 ```
 taorc_lint.py [paths...]
@@ -474,6 +594,7 @@ taorc_lint.py [paths...]
   --format text|json
   --severity suggestion|warning|error   minimum reported
   --rules C1,N7      subset
+  --show-suppressed  list suppressed findings and their reasons
   --fail-on warning  exit non-zero at or above (default: never fail)
 ```
 
@@ -482,14 +603,17 @@ taorc_lint.py [paths...]
 `scripts/validate.py` is the single CI gate. It fails on:
 
 1. **Schema** – `catalog/rules.yaml` violates `catalog/schema.json`.
-2. **Referential integrity** – an ID cited in any `.md`, lint rule, or eval scorer that is not in the catalog; or a non-deprecated catalog rule cited nowhere. *This is the check that holds the whole design together.*
+2. **Referential integrity** – an ID cited in any `.md`, lint rule, or eval scorer that is not in the catalog; or a catalog rule missing from `SKILL.md`'s catalog table. *This is the check that holds the whole design together.*
+
+   The second half is deliberately weaker than "cited somewhere": `SKILL.md` lists all 73, so appearing there is the floor. Requiring a citation in the managed block, the self-check, or `ai-code-tells.md` would drag every rule into those artifacts to satisfy CI—which is precisely how the block stops being a summary. Categories `A` and `P` legitimately live only in the catalog table and `naming.md`.
 3. **Skill spec** – `skills-ref validate ./skills/readable-code` fails, or `name` ≠ directory name.
-4. **Token budgets** – `SKILL.md` > 5,000; `system-prompt.md` > 800; `system-prompt-mini.md` > 150. Measured with a real tokenizer, not word count.
+4. **Budgets** – `SKILL.md` > 5,000 tokens or > 500 lines (PRD R2.2); `templates/agent-block.md` > 700 tokens (§6.2); `system-prompt.md` > 800; `system-prompt-mini.md` > 150. Tokens measured with a real tokenizer, not word count.
 5. **Adapter drift** – any generated file differs from what `build.py` would produce. (Run `build.py`, `git diff --exit-code`.)
 6. **Version sync** – `VERSION` ≠ any manifest version or any managed-block marker version.
 7. **Lint fixtures** – positive/negative suites do not produce their asserted finding sets.
 8. **Installer behavior** – fresh install, re-run (idempotent), install into a file with pre-existing user content (block inserted, user content preserved), `--detect` update, `--uninstall` (block removed, user content intact). Run in a temp dir on Linux, macOS, and Windows runners.
-9. **Markdown lint** and link check.
+9. **Placement matrix** – for each of the 10 R3.2 targets, install into a temp repo and assert the expected file exists at the documented path with the expected content and version marker. This is what makes the "10 harnesses" claim in M7 checkable; it verifies *placement*, not that the harness reads the file.
+10. **Markdown lint** and link check.
 
 Release workflow on tag: run `validate.py`, build `taorc-skill-v<version>.zip` for claude.ai upload, generate release notes from `CHANGELOG.md`, publish.
 
@@ -541,7 +665,21 @@ Judge model must differ from the generating model to reduce self-preference bias
 
 Cost estimate: 60 generations of ~2k output tokens plus ~120 judge calls ≈ **$15–40 per full run**. Budget for 3–4 runs across v1 development. This is low enough that it should be run on every catalog change, not just at release.
 
-### 10.4 Publication
+### 10.4 Trigger suite (M4)
+
+Activation cannot be tuned by running full agent sessions—each one costs a minute and a few cents, so a 100-prompt suite would be too slow to iterate against, which is how a `description` ends up shipped untested. Two tiers instead:
+
+**Tier 1 — proxy classifier (`evals/triggers.json`, `evals/run_triggers.py`).** For each of the 100 prompts, one cheap classification call: given only the skill's `name` and `description`, is this skill relevant to this request? No agent run, no tools. A full pass costs cents and takes under a minute, so the `description` can be iterated dozens of times.
+
+It runs on changes to `SKILL.md`'s frontmatter or `catalog/rules.yaml`, and on demand — not on every PR. It needs an API key, and a docs-only commit should not spend one or block on a provider outage.
+
+At n=100 (60/40), 90% resolves to roughly ±7pp and the 10% negative target to 2.5pp granularity. The 30-prompt suite this replaces could not resolve either target: with 15 negatives, a single false fire scores 6.7%, so a ≤5% target was unmeasurable by construction.
+
+**Tier 2 — end-to-end spot check.** 10 prompts (7 positive, 3 negative) run in real Claude Code, confirming that tier 1 predicts real activation. If they diverge, tier 1 is miscalibrated and the proxy prompt needs work—not the `description`.
+
+**The negatives are the hard half.** The most dangerous is prose readability: *"make this README clearer"*, *"tighten this error message"*, *"review my docs for clarity"*. These share the skill's entire vocabulary and are exactly what it must not claim. They get 10 of the 40 negative slots. Code *explanation* ("what does this function do?") gets 5 more — reading is not writing, and the skill has nothing to add there.
+
+### 10.5 Publication
 
 `evals/results/<date>/RESULTS.md` – method, per-scenario tables, aggregate metrics against PRD targets, and raw outputs committed. Any metric that misses its target is published anyway with a note. Selective reporting is the thing that would make the benchmark worthless.
 
@@ -579,33 +717,33 @@ Given Q3 (the book is available), the catalog is authored against the source rat
 
 | M | Deliverable | Gate |
 |---|---|---|
-| **M0** | Repo skeleton, `catalog/schema.json`, `build.py`, `validate.py`, CI green on an empty catalog | Generation and validation work before content exists |
-| **M1** | Catalog drafted, chapters 1–6 (P, N, A, C – 34 rules), verified per §11 | Josh's verification pass |
-| **M2** | Catalog complete (all 73), `chapter-map.md` | Referential integrity green |
-| **M3** | `SKILL.md` + all 9 reference files | Token budget green; manual read-through |
-| **M4** | `taorc-lint` + fixtures + configs | M5 false-positive target met |
-| **M5** | Adapters + installers + manifests | Installer behavior tests green on 3 OSes |
-| **M6** | Eval harness + first full run | Baseline numbers exist |
-| **M7** | Iterate catalog and description against eval results | M1, M2, M3, M4 targets met |
-| **M8** | README, CONTRIBUTING, CHANGELOG, examples, output style | – |
-| **M9** | Tag v1.0.0, publish, register with skills.sh | All PRD §7 metrics published |
+| **MS0** | Repo skeleton, `catalog/schema.json`, `build.py`, `validate.py`, CI green on an empty catalog | Generation and validation work before content exists |
+| **MS1** | Catalog drafted, chapters 1–6 (P, N, A, C – 34 rules), verified per §11 | Josh's verification pass |
+| **MS2** | Catalog complete (all 73), `chapter-map.md` | Referential integrity green |
+| **MS3** | `SKILL.md` + all 9 reference files | Token budget green; manual read-through |
+| **MS4** | `taorc-lint` + fixtures + configs | M5 false-positive target met |
+| **MS5** | Adapters + installers + manifests | Installer + placement-matrix tests green on 3 OSes; 4-harness manual pass recorded in `docs/harness-verification.md` |
+| **MS6** | Eval harness + first full run | Baseline numbers exist |
+| **MS7** | Iterate catalog and description against eval results | M1, M2, M3, M4 targets met |
+| **MS8** | README, CONTRIBUTING, CHANGELOG, examples, output style, `/taorc-review` | – |
+| **MS9** | Tag v1.0.0, publish, register with skills.sh | All PRD §7 metrics published |
 
-M7 is the milestone most likely to be skipped and least likely to be skippable. The first draft of a skill is not the product; the version tuned against its own eval results is. Budget real time there.
+MS7 is the milestone most likely to be skipped and least likely to be skippable. The first draft of a skill is not the product; the version tuned against its own eval results is. Budget real time there.
 
 ## 13. Risks specific to this design
 
 | Risk | Mitigation |
 |---|---|
-| **The `description` under-triggers on implicit tasks** – the skill only fires when someone says "readable" | M4 gated in CI-adjacent eval; iterate `description` against a 30-prompt trigger suite (15 should fire, 15 should not) before v1 |
+| **The `description` under-triggers on implicit tasks** – the skill only fires when someone says "readable" | M4 gated on the 100-prompt tier-1 suite (§10.4), cheap enough to run on every `description` change; tier-2 spot check confirms the proxy tracks reality |
 | **The catalog is too long for the agent to apply** – 73 rules exceeds working attention | The self-check (§4.5) is only 10 items, ordered by observed failure frequency. If evals show low application, cut the catalog to the 30 that move metrics, and move the rest to references |
 | **Generated adapters drift silently** | CI check 5 (§9) makes drift a build failure, not a discovery |
 | **`taorc-lint` fires on the repo's own examples** | Run it over `examples/` in CI; every intentional violation carries an inline suppression, which also proves suppression works |
 | **Over-application despite guardrails** | M3 measured on 3 of 10 scenarios; the "report what you left alone" step (§4.4 step 5) gives the agent an outlet |
-| **Book fidelity drifts as the catalog is edited post-M2** | Any change to a rule's `instruction` requires re-checking against its `chapter` before merge; noted in CONTRIBUTING |
+| **Book fidelity drifts as the catalog is edited post-MS2** | Any change to a rule's `instruction` requires re-checking against its `chapter` before merge; noted in CONTRIBUTING |
 
 ## 14. Implementation decisions
 
-Not blocking M0, but settled here so no milestone stalls on them.
+Not blocking MS0, but settled here so no milestone stalls on them.
 
 ### 14.1 Where `taorc-lint` lives – **inside the skill, in `scripts/`**
 
@@ -653,4 +791,4 @@ Separately, run `system-prompt-mini.md` against a local Ollama build as an unpub
 
 `skills/readable-code/SKILL.md` already sits on a path the CLI discovers natively (§2), so `npx skills add josh-wong/taorc` works with no additional configuration.
 
-M9 therefore carries one verification, not a task: run `npx skills add josh-wong/taorc` against the published tag from a clean machine, confirm it resolves and installs. Listing follows real installs on its own; treat it as an outcome rather than a step. If it has not appeared some weeks after release, that is a signal about adoption, not about packaging.
+MS9 therefore carries one verification, not a task: run `npx skills add josh-wong/taorc` against the published tag from a clean machine, confirm it resolves and installs. Listing follows real installs on its own; treat it as an outcome rather than a step. If it has not appeared some weeks after release, that is a signal about adoption, not about packaging.

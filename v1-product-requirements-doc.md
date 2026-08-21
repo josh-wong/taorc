@@ -4,7 +4,7 @@
 **Status**: Approved
 **Author**: josh-wong
 **Date**: 2026-08-21
-**Related**: `v1-design-doc.md` (to follow, after this document is approved)
+**Related**: `v1-design-doc.md`
 
 ## 1. Summary
 
@@ -45,7 +45,7 @@ Existing tooling does not catch these. Formatters (Prettier, Black, gofmt) norma
 
 ### 2.3 Why an agent skill rather than a linter
 
-Readability judgments are semantic. "Does this comment tell me something the code does not?" cannot be answered by a regex. A subset of the rules *is* mechanically checkable (see §6.6), but the core of the product must be instructions an agent reasons with, applied at authoring time—before the bad code is written—not a report generated afterward.
+Readability judgments are semantic. "Does this comment tell me something the code does not?" cannot be answered by a regex. A subset of the rules *is* mechanically checkable (see R6), but the core of the product must be instructions an agent reasons with, applied at authoring time—before the bad code is written—not a report generated afterward.
 
 ## 3. Prior art
 
@@ -55,7 +55,7 @@ Readability judgments are semantic. "Does this comment tell me something the cod
 |---|---|---|---|
 | [`juliusbrussee/caveman`](https://github.com/juliusbrussee/caveman) | Token-compression skill + proxy; `/caveman [lite\|full\|ultra]` modes; 8 agent integrations via JSON profiles | Mode switching; broad agent matrix; slash-command surface (`/taorc-review`) | Caveman optimizes *token cost*. `taorc` optimizes *human comprehension time*—often by spending more tokens, not fewer. Opposite objective. No proxy, no runtime, no BSL component. |
 | [`AminBlg/SimpleEnglish`](https://github.com/AminBlg/SimpleEnglish) | ASD-STE100 Simplified Technical English as a skill; 53 numbered rules; measured 74.6% violation reduction | **The closest model for `taorc`.** Numbered-rule catalog, paraphrase-don't-reproduce approach to a copyrighted standard, `prompts/system-prompt.md` fallback, an evals harness with a lint scorer, pragmatic/strict modes | SimpleEnglish governs *prose*. `taorc` governs *code and code comments*—which means language-specific idioms, a diff-scoped operating model, and a much harder deterministic-scoring problem. |
-| [`tbhb/vale-ai-tells`](https://github.com/tbhb/vale-ai-tells) | 111 Vale rules detecting AI-generated prose patterns; ships as versioned Vale packages; documents agent fix-loop workflows | The **"AI tells" framing** (see §6.2, `references/ai-code-tells.md`), stable rule IDs, structured findings the agent can loop on, pre-commit integration | Vale is a prose linter and cannot parse code. `taorc`'s equivalent layer needs AST tooling (ast-grep/Semgrep), and it is a *supporting* component here, not the product. |
+| [`tbhb/vale-ai-tells`](https://github.com/tbhb/vale-ai-tells) | 111 Vale rules detecting AI-generated prose patterns; ships as versioned Vale packages; documents agent fix-loop workflows | The **"AI tells" framing** (see R5.3, `references/ai-code-tells.md`), stable rule IDs, structured findings the agent can loop on, pre-commit integration | Vale is a prose linter and cannot parse code. `taorc`'s equivalent layer needs AST tooling (ast-grep/Semgrep), and it is a *supporting* component here, not the product. |
 
 ### 3.2 The closest competitor (not in the brief)
 
@@ -101,7 +101,7 @@ They are complements, not substitutes. `taorc` should say so in its README—tha
 - **NG2** – Not a correctness, security, or performance reviewer. Those are `/code-review` and `security-review` territory.
 - **NG3** – Not an architecture or design-pattern skill. That is `clean-code-skills`'s job.
 - **NG4** – No proxy, daemon, runtime, or hosted service. Files on disk only.
-- **NG5** – Not a whole-codebase auto-refactor tool in v1 (see §8 for v1.1).
+- **NG5** – Not a whole-codebase auto-refactor tool in v1 (see §8, v2).
 - **NG6** – No paid tier, no telemetry, no phone-home.
 
 ## 5. Users and use cases
@@ -174,7 +174,9 @@ Target: **65–75 rules**. Each rule is one line of instruction plus, where it e
 
 **R2.2** – `SKILL.md` ≤ 500 lines and ≤ 5,000 tokens. Everything else goes in `references/`, each with an explicit *when to load this* instruction—"read `references/comments.md` before writing or editing any comment", not "see references for details."
 
-**R2.3** – The `description` must trigger reliably. It has to fire on both explicit asks ("make this readable", "review the comments") and implicit ones (any code-writing task). Getting this right is its own tuning problem; see §7 metric M4.
+**R2.3** – The `description` must trigger reliably. It has to fire on both explicit asks ("make this readable", "review the comments") and implicit ones (any code-writing task). Getting this right is its own tuning problem, measured on a **100-prompt trigger suite**: 60 positives spanning explicit asks, implicit code writing, review, test authoring, refactor, and de-slop requests; 40 negatives spanning prose editing, git operations, dependency upgrades, config edits, debugging, and code *explanation*. See §7 metric M4 and design doc §10.4.
+
+Under-firing and over-firing are not symmetric costs. A skill that fails to fire on code writing does nothing at all; a skill that fires on a config edit spends about 4,500 tokens. The targets are set accordingly (≥90% / ≤10%).
 
 **R2.4** – An **operating loop** the agent follows, not a wall of rules. Draft shape:
 
@@ -195,7 +197,15 @@ Target: **65–75 rules**. Each rule is one line of instruction plus, where it e
 
 ### R3 – Multi-agent distribution
 
-**R3.1** – Canonical source of truth: `skills/readable-code/`. Every other target is generated from it. **No hand-maintained duplicates**—this is the single biggest maintenance trap and drift is guaranteed without generation + CI validation.
+**R3.1** – Three canonical sources, each owning one thing:
+
+| Source | Owns |
+|---|---|
+| `catalog/rules.yaml` | Every rule ID, and the metadata for each |
+| `skills/readable-code/` | The skill prose—hand-written, generates nothing |
+| `templates/agent-block.md` | The managed block every non-skill adapter embeds |
+
+Every adapter, manifest, and condensed prompt is generated from those. **No hand-maintained duplicates**—this is the single biggest maintenance trap and drift is guaranteed without generation + CI validation.
 
 **R3.2** – Required targets for v1:
 
@@ -221,7 +231,7 @@ Target: **65–75 rules**. Each rule is one line of instruction plus, where it e
 
 **R4.1** – `prompts/system-prompt.md`: a compressed version, target ≤ 800 tokens, that survives being pasted into a system-prompt box with no file access and no skill runtime. This is what makes the "works with Llama and Qwen" claim true.
 
-**R4.2** – `prompts/system-prompt-mini.md`: a ~150-token version for tight context budgets. Optional if the full version tests well enough.
+**R4.2** – `prompts/system-prompt-mini.md`: a ~150-token version for tight context budgets. Required—the design depends on it for the open-weights smoke test and enforces its budget in CI.
 
 **R4.3** – Both are generated from the catalog and validated in CI against a token ceiling.
 
@@ -231,9 +241,13 @@ Target: **65–75 rules**. Each rule is one line of instruction plus, where it e
 
 **R5.2** – Include at least three examples of **when not to apply a rule**—a `tmp` that is genuinely fine, a comment that looks redundant but is not, a one-line function that should stay inline. Over-application is the main failure mode of a skill like this, and showing restraint teaches restraint.
 
+**R5.3** – `references/ai-code-tells.md`: the catalog's LLM-facing index. One row per recognizable AI code tell (§2.2), each mapped to the rule ID that governs it and a one-line fix. This is what a "de-slop this file" request resolves against, and it is entirely original work—no equivalent exists in the book or in any competing skill. It is the artifact most responsible for the project not reading as a book summary (§9).
+
 ### R6 – `taorc-lint` (deterministic checker)
 
-**R6.1** – A checker covering the mechanically-detectable subset—realistically 15–20 of the ~70 rules. Candidates: comment-restates-next-line, `// Step N:` narration, banner comments, emoji in comments, empty-word identifiers, unit-free time/size names, docstring-restates-signature, single-use helper, nesting depth, boolean-expression term count, negated boolean names, test names without a scenario.
+**R6.1** – A checker covering the mechanically-detectable subset. Per the Q1 decision, v1 ships **10 high-precision rules** of the 73: comment-echoes-next-line, `// Step N:` narration, banner comments, emoji in comments, placeholder comments, commented-out code, empty-word identifiers, unit-free time/size names, negated boolean names, and test names without a scenario.
+
+Structural checks that mainstream linters already do well—nesting depth, function length, boolean-expression complexity—are **out of scope by design**. `taorc` ships tuned `ruff`/`eslint` config for those instead of reimplementing them.
 
 **R6.2** – Output must be **agent-consumable**: rule ID, file:line, matched text, and a concrete fix instruction—the `vale-ai-tells` pattern. The agent loops until clean.
 
@@ -241,7 +255,7 @@ Target: **65–75 rules**. Each rule is one line of instruction plus, where it e
 
 **R6.4** – Must ship with a false-positive fixture suite. A noisy linter here is worse than none—it trains users to ignore the whole product.
 
-**R6.5** – **Scope call for review**: this is the most expensive component and the one most likely to slip v1. See §8 and §11 Q1.
+**R6.5** – **Scope**: resolved by Q1. The 10-rule, two-language v1 above is deliberately small so this component cannot sink the release; expansion is v1.x.
 
 ### R7 – Evals
 
@@ -280,10 +294,10 @@ Target: **65–75 rules**. Each rule is one line of instruction plus, where it e
 | M1 | Reduction in `taorc-lint` violations per 100 LOC, skill vs. baseline | ≥ 60% |
 | M2 | Blind pairwise judge preference for skill output | ≥ 70% |
 | M3 | Diff-size inflation on bugfix tasks, skill vs. baseline | ≤ 10% |
-| M4 | Skill activation rate on relevant prompts (correct trigger) | ≥ 90%, with ≤ 5% false activation on non-code tasks |
+| M4 | Skill activation on the 100-prompt trigger suite (R2.3) | ≥ 90% on the 60 positives, ≤ 10% on the 40 negatives |
 | M5 | Linter false-positive rate on the fixture suite | ≤ 5% |
 | M6 | `SKILL.md` token size | ≤ 5,000 |
-| M7 | Harnesses verified working | ≥ 10 |
+| M7 | Harness coverage | ≥ 10 with automated file-placement checks; ≥ 4 verified end-to-end by hand |
 | M8 | Adoption (GitHub stars + skills.sh installs at 90 days) | directional only |
 
 ## 8. Scope
@@ -292,20 +306,20 @@ Target: **65–75 rules**. Each rule is one line of instruction plus, where it e
 
 - Full rule catalog (R1) – all 10 categories
 - `skills/readable-code/` with `SKILL.md` + `references/{naming,comments,control-flow,structure,tests,ai-code-tells,chapter-map,language-map,review-checklist}.md`
-- Three modes (R2.5)
+- Three modes (R2.5), including the `/taorc-review` slash command
 - `prompts/system-prompt.md`
 - `examples/before-after.md`
 - Distribution to all R3.2 targets, generated from source, CI-validated
-- `taorc-lint` v1: 8-10 high-precision rules, Python + TypeScript, ast-grep (R6)
+- `taorc-lint` v1: the 10 high-precision rules in R6.1, Python + TypeScript, ast-grep
 - Claude Code output style for review-mode formatting
 - Evals (R7) with published results, cross-model (Claude + GPT + open-weights)
 - README, CONTRIBUTING, CHANGELOG, LICENSE, disclaimer
+- `docs/harness-verification.md` — what was tested where, and on which versions (M7)
 
 ### v1.x (fast follow)
 
-- `taorc-lint` rule expansion beyond the initial 8-10; Go, Rust, Java, C#
+- `taorc-lint` rule expansion beyond the initial 10; Go, Rust, Java, C#
 - Additional languages in `language-map.md`
-- `/taorc-review` slash command + Claude Code plugin polish
 - Pre-commit hook integration
 
 ### v2 (later)
@@ -323,7 +337,7 @@ Target: **65–75 rules**. Each rule is one line of instruction plus, where it e
 | **Context cost** – skill loads on every code task | Medium | Hard 5k budget; aggressive progressive disclosure; measure with the skill on vs. off |
 | **Rule conflicts with project linters** | Medium | R1.3 precedence: formatter and project config always win |
 | **Copyright** | High if wrong | R9 in full; original prose and examples only; chapter citations, not summaries |
-| **Trigger tuning** – fires on prose tasks, or fails to fire on code tasks | Medium | M4 as a gating metric; iterate the `description` against a prompt suite |
+| **Trigger tuning** – fires on prose tasks, or fails to fire on code tasks | Medium | M4 gated on the 100-prompt suite; the hardest negatives are prose-readability asks ("make this README clearer"), which are deliberately over-represented in it |
 | **Linter noise** | Medium | R6.4 fixtures; ship rules conservatively; default to `suggestion` severity |
 | **Adapter drift across 10 targets** | Medium | Single source + generation + CI sync check (R3.1, R8.4) |
 | **"Just a book summary" perception** | Medium | The `X` category, `ai-code-tells.md`, the linter, and published evals are all original work and should be foregrounded in the README |
@@ -334,7 +348,7 @@ Target: **65–75 rules**. Each rule is one line of instruction plus, where it e
 - Agent Skills spec (stable, Linux Foundation / Anthropic open standard since Dec 2025)
 - `skills-ref` validator
 - `npx skills` / skills.sh registry
-- ast-grep or Semgrep (R6 only)
+- ast-grep (R6 only; Semgrep evaluated and not chosen)
 - An eval runner (Python, following SimpleEnglish's `evals/run_bench.py` shape)
 - A copy of the book, for fidelity of rule extraction (see Q3)
 
