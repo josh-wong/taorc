@@ -43,6 +43,7 @@ Commit message validation:
 - Reference issue numbers when applicable
 
 For this project's PRs:
+
 - Note whether the change adds, edits, or deprecates a `catalog/rules.yaml` rule ID, and confirm no existing ID was renumbered or reused — IDs are permanent once shipped
 - If a generated file changed (a managed block, a manifest, an adapter under `.cursor/`, `.clinerules/`, etc.), confirm it was produced by `python scripts/build.py` from `templates/agent-block.md` / `catalog/rules.yaml`, not hand-edited
 - Call out any change to a token-budgeted file (`SKILL.md`, `templates/agent-block.md`, `prompts/system-prompt.md`, `prompts/system-prompt-mini.md`) and its new token count against budget
