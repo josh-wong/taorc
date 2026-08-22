@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +29,13 @@ CATEGORY_PREFIXES = {
 # with catalog/schema.json's `id` pattern by validate.py's
 # check_schema_prefix_sync(), since a JSON schema can't import this constant.
 RULE_ID_PREFIX_CLASS = "".join(sorted(CATEGORY_PREFIXES.values()))
-RULE_ID_PATTERN = re.compile(rf"\b[{RULE_ID_PREFIX_CLASS}][0-9]+\b")
+
+# Rule IDs are only recognized inside backtick code spans (the citation
+# convention used throughout this repo, e.g. `N7`, `C4`, `X2` -- see
+# AGENTS.md's "Controlled vocabularies" section). A bare, un-quoted pattern
+# would also match ordinary prose tokens that happen to look like an ID
+# (X11, F1, V8, S3, ...), producing false "unknown rule id" citations.
+RULE_ID_PATTERN = re.compile(rf"`([{RULE_ID_PREFIX_CLASS}][0-9]+)`")
 
 
 def read_version() -> str:
@@ -58,9 +66,23 @@ def count_tokens(text: str) -> int:
 
         encoding = tiktoken.get_encoding("cl100k_base")
         return len(encoding.encode(text))
-    except Exception:
+    except Exception as exc:
+        # Printed rather than swallowed: a budget check that passes/fails near
+        # the boundary should be traceable to "tiktoken was unavailable here"
+        # rather than looking like a silent, unexplained verdict change.
+        print(f"count_tokens: tiktoken unavailable ({exc!r}), using char-based estimate", file=sys.stderr)
         return max(1, int(len(text) // 2.5))
 
 
 def find_rule_ids(text: str) -> set[str]:
     return set(RULE_ID_PATTERN.findall(text))
+
+
+def read_manifest_version(path: Path) -> str | None:
+    return json.loads(path.read_text(encoding="utf-8")).get("version")
+
+
+def write_manifest_version(path: Path, version: str) -> None:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["version"] = version
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

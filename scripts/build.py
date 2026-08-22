@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from lib import REPO_ROOT, count_tokens, read_version
+from lib import REPO_ROOT, count_tokens, read_version, write_manifest_version
 
 BLOCK_BEGIN = "<!-- taorc:begin v{version} -->"
 BLOCK_END = "<!-- taorc:end -->"
@@ -39,8 +39,18 @@ def apply_managed_block(path: Path, block: str, frontmatter: str | None = None) 
     else:
         existing = frontmatter or ""
 
-    if BLOCK_BEGIN.split(" v")[0] in existing and BLOCK_END in existing:
-        start = existing.index(BLOCK_BEGIN.split(" v")[0])
+    begin_prefix = BLOCK_BEGIN.split(" v")[0]
+    has_begin = begin_prefix in existing
+    has_end = BLOCK_END in existing
+
+    if has_begin != has_end:
+        raise ValueError(
+            f"{path}: has a taorc managed-block begin marker without a matching end "
+            "marker (or vice versa) -- fix the file by hand before running build.py"
+        )
+
+    if has_begin and has_end:
+        start = existing.index(begin_prefix)
         end = existing.index(BLOCK_END) + len(BLOCK_END)
         updated = existing[:start] + block.rstrip("\n") + "\n" + existing[end:]
     else:
@@ -49,14 +59,6 @@ def apply_managed_block(path: Path, block: str, frontmatter: str | None = None) 
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(updated, encoding="utf-8")
-
-
-def sync_manifest_version(path: Path, version: str) -> None:
-    import json
-
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data["version"] = version
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def main() -> int:
@@ -83,7 +85,7 @@ def main() -> int:
         print(f"Updated {relative_path}")
 
     for relative_path in MANIFEST_TARGETS:
-        sync_manifest_version(REPO_ROOT / relative_path, version)
+        write_manifest_version(REPO_ROOT / relative_path, version)
         print(f"Synced version in {relative_path}")
 
     return 0

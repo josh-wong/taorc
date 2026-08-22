@@ -15,7 +15,7 @@ import re
 import sys
 
 import jsonschema
-from build import BLOCK_BEGIN, render_managed_block
+from build import AGENT_BLOCK_TOKEN_BUDGET, BLOCK_BEGIN, render_managed_block
 from lib import (
     CATEGORY_PREFIXES,
     REPO_ROOT,
@@ -23,12 +23,15 @@ from lib import (
     count_tokens,
     find_rule_ids,
     load_catalog,
+    read_manifest_version,
     read_version,
 )
 
+# templates/agent-block.md's budget is imported from build.py rather than
+# duplicated here, so the two scripts can't drift onto different limits.
 BUDGETS = {
     "skills/readable-code/SKILL.md": 5000,
-    "templates/agent-block.md": 700,
+    "templates/agent-block.md": AGENT_BLOCK_TOKEN_BUDGET,
     "prompts/system-prompt.md": 800,
     "prompts/system-prompt-mini.md": 150,
 }
@@ -51,10 +54,11 @@ def check_schema_prefix_sync() -> list[str]:
     """catalog/schema.json hardcodes its own copy of the rule-ID prefix class
     (it can't import RULE_ID_PREFIX_CLASS, being plain JSON); catch drift
     between the two here instead of letting them silently diverge."""
-    schema_text = (REPO_ROOT / "catalog" / "schema.json").read_text(encoding="utf-8")
-    match = re.search(r'"id":\s*\{\s*"type":\s*"string",\s*"pattern":\s*"\^\[([A-Z]+)\]', schema_text)
+    schema = json.loads((REPO_ROOT / "catalog" / "schema.json").read_text(encoding="utf-8"))
+    id_pattern = schema["$defs"]["rule"]["properties"]["id"]["pattern"]
+    match = re.match(r"\^\[([A-Z]+)\]", id_pattern)
     if not match:
-        return ["catalog/schema.json: could not locate the rule id pattern to check for prefix drift"]
+        return [f"catalog/schema.json: id pattern {id_pattern!r} is not in the expected ^[...] form"]
     schema_prefixes = "".join(sorted(match.group(1)))
     lib_prefixes = "".join(sorted(RULE_ID_PREFIX_CLASS))
     if schema_prefixes != lib_prefixes:
@@ -166,10 +170,10 @@ def check_version_sync(version: str) -> list[str]:
     ]:
         if not manifest_path.exists():
             continue
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if data.get("version") != version:
+        current_version = read_manifest_version(manifest_path)
+        if current_version != version:
             rel = manifest_path.relative_to(REPO_ROOT)
-            errors.append(f"{rel}: version {data.get('version')!r} does not match VERSION ({version!r})")
+            errors.append(f"{rel}: version {current_version!r} does not match VERSION ({version!r})")
 
     # Derived from build.BLOCK_BEGIN so the two never drift apart.
     marker_pattern = re.compile(re.escape(BLOCK_BEGIN).replace(r"\{version\}", r"([\d.]+)"))
