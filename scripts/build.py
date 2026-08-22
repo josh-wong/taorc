@@ -52,7 +52,14 @@ def apply_managed_block(path: Path, block: str, frontmatter: str | None = None) 
     if has_begin and has_end:
         start = existing.index(begin_prefix)
         end = existing.index(BLOCK_END) + len(BLOCK_END)
-        updated = existing[:start] + block.rstrip("\n") + "\n" + existing[end:]
+        # existing[end:] still carries the single newline that originally
+        # separated the old end marker from whatever follows; strip it before
+        # re-adding block's own trailing newline, or repeated runs accumulate
+        # one extra blank line each time.
+        remainder = existing[end:]
+        if remainder.startswith("\n"):
+            remainder = remainder[1:]
+        updated = existing[:start] + block.rstrip("\n") + "\n" + remainder
     else:
         separator = "\n" if existing and not existing.endswith("\n") else ""
         updated = existing + separator + block
