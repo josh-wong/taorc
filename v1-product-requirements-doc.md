@@ -262,6 +262,7 @@ Structural checks that mainstream linters already do well—nesting depth, funct
 **R7.1** – A scenario suite of ~10 code-writing tasks (new function, bugfix, refactor, test authoring, script, API handler) × baseline vs. skill-enabled.
 
 **R7.2** – Scoring, dual-track:
+
 - **Automated**: `taorc-lint` violations per 100 LOC; comment-to-code ratio; mean nesting depth; empty-word identifier count.
 - **LLM judge**: blind pairwise preference on "which would take less time to understand", plus a rubric score per category.
 
@@ -377,7 +378,7 @@ Answer: Yes, I have the book to refer to.
 Answer: Let's go with your recommendation.
 
 **Q5 – Relationship to `clean-code-skills`.**
-Position as an explicit complement in the README ("use both"), stay silent, or compete head-on? *My recommendation: explicit complement. It is true, it is generous, and it makes the differentiation legible to anyone deciding between them.* 
+Position as an explicit complement in the README ("use both"), stay silent, or compete head-on? *My recommendation: explicit complement. It is true, it is generous, and it makes the differentiation legible to anyone deciding between them.*
 
 Answer: Let's go with your recommendation.
 
@@ -387,19 +388,19 @@ SimpleEnglish does. Low cost, narrow benefit, Claude-only. *My recommendation: v
 Answer: Yes, let's ship it in the first release, v1.0.
 
 **Q7 – Eval budget.**
-R7.3 cross-model evals cost real API money. Confirm you want them in v1, or whether a single-model eval is enough to publish initially. 
+R7.3 cross-model evals cost real API money. Confirm you want them in v1, or whether a single-model eval is enough to publish initially.
 
 Answer: Yes, v1; I'm OK with the cost.
 
 ## 12. References
 
 - Boswell, D. & Foucher, T. *The Art of Readable Code*. O'Reilly, 2011. ISBN 978-0596802295.
-- Agent Skills specification – https://agentskills.io/specification
-- Agent Skills authoring best practices – https://agentskills.io/skill-creation/best-practices
-- `juliusbrussee/caveman` – https://github.com/juliusbrussee/caveman
-- `AminBlg/SimpleEnglish` – https://github.com/AminBlg/SimpleEnglish
-- `tbhb/vale-ai-tells` – https://github.com/tbhb/vale-ai-tells
-- `btseee/clean-code-skills` – https://github.com/btseee/clean-code-skills
-- AGENTS.md – https://agents.md
-- ast-grep – https://ast-grep.github.io
-- VS Code Agent Skills – https://code.visualstudio.com/docs/agent-customization/agent-skills
+- Agent Skills specification – <https://agentskills.io/specification>
+- Agent Skills authoring best practices – <https://agentskills.io/skill-creation/best-practices>
+- `juliusbrussee/caveman` – <https://github.com/juliusbrussee/caveman>
+- `AminBlg/SimpleEnglish` – <https://github.com/AminBlg/SimpleEnglish>
+- `tbhb/vale-ai-tells` – <https://github.com/tbhb/vale-ai-tells>
+- `btseee/clean-code-skills` – <https://github.com/btseee/clean-code-skills>
+- AGENTS.md – <https://agents.md>
+- ast-grep – <https://ast-grep.github.io>
+- VS Code Agent Skills – <https://code.visualstudio.com/docs/agent-customization/agent-skills>

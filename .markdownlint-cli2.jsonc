@@ -1,0 +1,20 @@
+{
+  "config": {
+    "default": true,
+    // Prose in this repo isn't hard-wrapped (long lines are normal in
+    // AGENTS.md-style guidance and design docs); enforcing a column limit
+    // would fight the project's actual writing style rather than catch bugs.
+    "MD013": false,
+    // Several files are intentionally fragments, not standalone documents:
+    // agent persona prompts (.claude/agents/*.md), the managed-block source
+    // (templates/agent-block.md), and the PR template (which opens with
+    // "## Summary" by design, matching CONTRIBUTING's checklist format).
+    "MD041": false,
+    // The design/PRD docs align table pipes for source readability per
+    // AGENTS.md; MD060's "compact" style would fight that convention, and
+    // it also misparses pipe characters inside inline-code regex examples
+    // as extra columns.
+    "MD060": false,
+    "MD056": false
+  }
+}

@@ -23,7 +23,7 @@ The join key is the **rule ID** (`N7`, `C4`, `X2`). It appears in the catalog, i
 
 ## 2. Repository layout
 
-```
+```text
 taorc/
 ├── README.md                      # hook, before/after, install matrix, benchmarks, disclaimer
 ├── CONTRIBUTING.md                # the bar for adding a rule
@@ -216,6 +216,7 @@ metadata:
 ```
 
 Design notes on `description`—this is the highest-leverage 1,000 characters in the project:
+
 - It leads with the *outcome*, so the model can judge relevance to any task.
 - It names concrete triggers ("clean up the comments", "improve these names") for explicit asks.
 - It names the AI tells, so the skill fires on de-slopping requests.
@@ -235,7 +236,7 @@ Mode is inferred, never asked. If genuinely ambiguous, default to `write` for ne
 
 ### 4.4 Operating loop
 
-```
+```text
 1. READ LOCAL CONTEXT      Before writing: the file's existing naming vocabulary,
                            its comment density, the formatter/linter config
                            (.prettierrc, pyproject.toml, .editorconfig), the test
@@ -284,7 +285,7 @@ Ten questions, ordered by how often agents fail them:
 
 Each pointer states its trigger. Generic "see references/" is ignored by agents.
 
-```
+```text
 Read references/comments.md      before writing or editing any comment or docstring.
 Read references/naming.md        when naming a public API, when a name is
                                  contested in review, or for any layout or
@@ -350,7 +351,7 @@ The **Lint** column marks the nine `taorc-lint` catches; the rest need the agent
 
 Managed block markers:
 
-```
+```text
 <!-- taorc:begin v1.0.0 -->
 ...
 <!-- taorc:end -->
@@ -455,7 +456,7 @@ So the release gate is **four manual smoke tests, one per delivery path plus the
 
 One format, used by review mode, refactor mode's change report, and `taorc-lint`. Shared format means the agent's fix-loop reads its own output and the linter's output identically.
 
-```
+```text
 [N7] src/api/client.ts:42  Name has no unit
   const timeout = 30;
   → rename to `timeoutSecs` (or `timeoutMs` if milliseconds)
@@ -476,7 +477,7 @@ One format, used by review mode, refactor mode's change report, and `taorc-lint`
 
 `skills/readable-code/scripts/taorc_lint.py` – single file, Python 3.10+, **stdlib only**, so an agent can run it with no install step. It lives inside the skill so it travels with every install method; see §14.1.
 
-```
+```text
 taorc_lint.py
   ├─ shells out to `ast-grep scan --json` with scripts/sgconfig.yml (9 of 10 rules)
   ├─ implements C1 (comment-echoes-code) in Python over ast-grep's
@@ -512,7 +513,7 @@ Severities are deliberately conservative: four `suggestion`, six `warning`, **ze
 
 C1 is the highest-value rule in the set and the only one that is not a pattern match, so it gets a specified algorithm rather than a description. Left vague, an implementer guesses a threshold and ships false positives, which per PRD R6.4 discredits the whole tool.
 
-```
+```text
 1. Take the comment text and the next executable statement.
 2. Tokenize both: lowercase, split camelCase and snake_case, strip punctuation.
 3. From the comment's tokens drop language keywords and stopwords
@@ -575,11 +576,12 @@ Referenced in §3.3 and §13 but never defined, so: a suppression is a trailing 
 data = json.loads(raw)  # taorc-ignore: N1 — matches the wire format's field name
 ```
 
-```
+```text
 # taorc-ignore-next: C1 — the restatement is deliberate; see ADR-014
 ```
 
 Rules:
+
 - The rule ID is required. A bare `taorc-ignore` suppresses nothing.
 - The reason is required. `taorc_lint.py` reports a suppression with no reason as its own finding — an unexplained suppression is how a rule quietly stops applying.
 - `--show-suppressed` lists them; `--fail-on` never counts them.
@@ -588,7 +590,7 @@ The repo's own `examples/` use these, which doubles as the test that suppression
 
 ### 8.6 CLI
 
-```
+```text
 taorc_lint.py [paths...]
   --changed          lint files changed vs. the merge base (agent default)
   --format text|json
@@ -643,6 +645,7 @@ Scenarios 2 and 3 exist to catch the failure mode, not to show the win. If the s
 ### 10.2 Scoring
 
 **Automated** (`score.py`, deterministic, free):
+
 - `taorc-lint` findings per 100 LOC → PRD metric M1
 - comment-to-code ratio, and share of comments that are *why*-comments
 - mean and max nesting depth (via ruff/eslint)
@@ -650,6 +653,7 @@ Scenarios 2 and 3 exist to catch the failure mode, not to show the win. If the s
 - diff size on scenarios 2, 3, 9 → PRD metric M3
 
 **Judged** (`judge.py`):
+
 - Blind pairwise, order randomized, on one question only: *which of these would take a new reader less time to understand?* → M2
 - Per-category rubric, 1–5, on N / C / F / S / T
 
@@ -687,7 +691,7 @@ At n=100 (60/40), 90% resolves to roughly ±7pp and the 10% negative target to 2
 
 Given Q3 (the book is available), the catalog is authored against the source rather than from summaries. Constraint from PRD R9: **no text from the book enters the repository.**
 
-```
+```text
 1. DRAFT       Per chapter, draft rule entries in catalog/rules.yaml from the
                chapter's ideas. Original phrasing, original examples.
 
