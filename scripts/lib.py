@@ -10,8 +10,6 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-RULE_ID_PATTERN = re.compile(r"\b[PNACFEVSTX][0-9]+\b")
-
 CATEGORY_PREFIXES = {
     "principles": "P",
     "names": "N",
@@ -24,6 +22,12 @@ CATEGORY_PREFIXES = {
     "tests": "T",
     "guardrails": "X",
 }
+
+# Derived from CATEGORY_PREFIXES so the two never drift apart. Kept in sync
+# with catalog/schema.json's `id` pattern by validate.py's
+# check_schema_prefix_sync(), since a JSON schema can't import this constant.
+RULE_ID_PREFIX_CLASS = "".join(sorted(CATEGORY_PREFIXES.values()))
+RULE_ID_PATTERN = re.compile(rf"\b[{RULE_ID_PREFIX_CLASS}][0-9]+\b")
 
 
 def read_version() -> str:
@@ -43,17 +47,19 @@ def load_catalog(path: Path | None = None) -> dict[str, Any]:
 def count_tokens(text: str) -> int:
     """Approximate token count.
 
-    Falls back to a character-based estimate when tiktoken is unavailable,
-    which is close enough for a budget guardrail (real tokenizer counts are
-    always <= this estimate for English prose).
+    Falls back to a character-based estimate when tiktoken is unavailable or
+    unusable (not installed, or its encoding can't be fetched, e.g. no network
+    on first use). The estimate uses ~2.5 characters/token, which runs high
+    for typical English/code text and so is unlikely to under-count enough
+    to mask an over-budget file, though it is not a strict upper bound.
     """
     try:
         import tiktoken
 
         encoding = tiktoken.get_encoding("cl100k_base")
         return len(encoding.encode(text))
-    except ImportError:
-        return max(1, len(text) // 4)
+    except Exception:
+        return max(1, int(len(text) // 2.5))
 
 
 def find_rule_ids(text: str) -> set[str]:

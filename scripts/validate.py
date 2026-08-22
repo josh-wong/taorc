@@ -15,9 +15,11 @@ import re
 import sys
 
 import jsonschema
+from build import BLOCK_BEGIN, render_managed_block
 from lib import (
     CATEGORY_PREFIXES,
     REPO_ROOT,
+    RULE_ID_PREFIX_CLASS,
     count_tokens,
     find_rule_ids,
     load_catalog,
@@ -43,6 +45,24 @@ def check_schema(catalog: dict) -> list[str]:
     validator = jsonschema.Draft202012Validator(schema)
     errors = [f"catalog/rules.yaml: {e.message} (at {list(e.path)})" for e in validator.iter_errors(catalog)]
     return errors
+
+
+def check_schema_prefix_sync() -> list[str]:
+    """catalog/schema.json hardcodes its own copy of the rule-ID prefix class
+    (it can't import RULE_ID_PREFIX_CLASS, being plain JSON); catch drift
+    between the two here instead of letting them silently diverge."""
+    schema_text = (REPO_ROOT / "catalog" / "schema.json").read_text(encoding="utf-8")
+    match = re.search(r'"id":\s*\{\s*"type":\s*"string",\s*"pattern":\s*"\^\[([A-Z]+)\]', schema_text)
+    if not match:
+        return ["catalog/schema.json: could not locate the rule id pattern to check for prefix drift"]
+    schema_prefixes = "".join(sorted(match.group(1)))
+    lib_prefixes = "".join(sorted(RULE_ID_PREFIX_CLASS))
+    if schema_prefixes != lib_prefixes:
+        return [
+            f"catalog/schema.json: id pattern prefixes {schema_prefixes!r} do not match "
+            f"lib.CATEGORY_PREFIXES {lib_prefixes!r}"
+        ]
+    return []
 
 
 def check_id_consistency(catalog: dict) -> list[str]:
@@ -115,18 +135,21 @@ def check_referential_integrity(catalog: dict) -> list[str]:
     return errors
 
 
-def check_budgets() -> list[str]:
+def check_budgets(version: str) -> list[str]:
     errors = []
     for relative_path, budget in BUDGETS.items():
         path = REPO_ROOT / relative_path
         if not path.exists():
             continue
         text = path.read_text(encoding="utf-8")
-        tokens = count_tokens(text)
+        # The agent-block template is measured as build.py renders it (with
+        # its begin/end markers) so the two scripts check the same content.
+        measured_text = render_managed_block(version, text) if relative_path == "templates/agent-block.md" else text
+        tokens = count_tokens(measured_text)
         if tokens > budget:
             errors.append(f"{relative_path}: {tokens} tokens exceeds budget of {budget}")
         if relative_path.endswith("SKILL.md"):
-            line_count = text.count("\n") + 1
+            line_count = len(text.splitlines())
             if line_count > SKILL_MD_LINE_LIMIT:
                 errors.append(f"{relative_path}: {line_count} lines exceeds limit of {SKILL_MD_LINE_LIMIT}")
     return errors
@@ -148,7 +171,8 @@ def check_version_sync(version: str) -> list[str]:
             rel = manifest_path.relative_to(REPO_ROOT)
             errors.append(f"{rel}: version {data.get('version')!r} does not match VERSION ({version!r})")
 
-    marker_pattern = re.compile(r"<!-- taorc:begin v([\d.]+) -->")
+    # Derived from build.BLOCK_BEGIN so the two never drift apart.
+    marker_pattern = re.compile(re.escape(BLOCK_BEGIN).replace(r"\{version\}", r"([\d.]+)"))
     for relative_path in [
         "AGENTS.md",
         "CLAUDE.md",
@@ -179,14 +203,16 @@ def main() -> int:
 
     all_errors: list[str] = []
     all_errors += check_schema(catalog)
+    all_errors += check_schema_prefix_sync()
 
-    # Downstream checks assume schema-valid rules; skip them on a broken catalog.
+    # Downstream checks assume schema-valid rules (e.g. every rule has an
+    # 'id'); skip them on a broken catalog rather than crashing.
     if not all_errors:
         all_errors += check_id_consistency(catalog)
         all_errors += check_lint_rule_files(catalog)
+        all_errors += check_referential_integrity(catalog)
 
-    all_errors += check_referential_integrity(catalog)
-    all_errors += check_budgets()
+    all_errors += check_budgets(version)
     all_errors += check_version_sync(version)
 
     if all_errors:
