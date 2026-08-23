@@ -1,0 +1,44 @@
+# Ruff configuration for taorc's own Python.
+#
+# Both the rule set and the ruff version are pinned on purpose.
+# requirements-dev.txt pins every other tool exactly, but ruff reached CI only
+# through astral-sh/ruff-action, which installs the newest release when no
+# version is given. That left the lint result depending on the day it ran: a
+# ruff release adding a rule could turn CI red with no change to this repo.
+# The workflow now pins the version and this file pins the rules, so a lint
+# result is reproducible from the commit alone.
+
+target-version = "py310"  # AGENTS.md sets the floor at 3.10+; CI runs 3.12.
+line-length = 100
+
+[lint]
+select = [
+  "F",     # pyflakes
+  "E",     # pycodestyle errors
+  "W",     # pycodestyle warnings
+  "I",     # import sorting
+  "UP",    # pyupgrade
+  "B",     # flake8-bugbear
+  "C4",    # flake8-comprehensions
+  "SIM",   # flake8-simplify
+  "RET",   # flake8-return
+  "ARG",   # unused arguments
+  "PIE",   # flake8-pie
+  "PTH",   # prefer pathlib over os.path
+  "ISC",   # implicit string concatenation
+  "FURB",  # refurb; modernization
+  "BLE",   # blind except
+  "N",     # pep8-naming
+  "A",     # builtin shadowing
+  "RUF",   # ruff-specific rules
+]
+
+ignore = [
+  # SIM108 asks for a ternary wherever an if/else assigns a single variable.
+  # Catalog rule F3 says the reverse: reach for a conditional expression only
+  # when it is genuinely quicker to understand than the if/else. At the one
+  # site this fires, the ternary ruff proposes runs to 95 characters and is
+  # plainly harder to read than the four-line block. Enabling it would point
+  # this repo's CI against this repo's own catalog.
+  "SIM108",
+]

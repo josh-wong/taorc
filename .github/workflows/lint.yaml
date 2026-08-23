@@ -24,7 +24,15 @@ jobs:
       - name: Lint Python
         uses: astral-sh/ruff-action@v3
         with:
-          args: check scripts/ evals/ skills/readable-code/scripts/
+          # Pinned to the same version requirements-dev.txt installs, so a
+          # local run and a CI run agree. Without this the action takes the
+          # newest release at run time and a ruff release can turn CI red on
+          # its own. The rule set is pinned separately, in ruff.toml.
+          version-file: requirements-dev.txt
+          # Paths belong in src, not args: the action appends src (defaulting
+          # to the whole workspace) after args, so passing them as args lints
+          # the repo twice over.
+          src: "scripts/ evals/ skills/readable-code/scripts/"
 
       - name: Lint Markdown
         uses: DavidAnson/markdownlint-cli2-action@v20
