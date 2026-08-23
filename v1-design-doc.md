@@ -12,7 +12,7 @@ Four components, one join key.
 
 | Component | What it is | Why it exists |
 |---|---|---|
-| **Catalog** | `catalog/rules.yaml` – the machine-readable registry of all 73 rule IDs | Single source of truth for IDs. Everything else references it; CI enforces referential integrity |
+| **Catalog** | `catalog/rules.yaml` – the machine-readable registry of all 85 rule IDs | Single source of truth for IDs. Everything else references it; CI enforces referential integrity |
 | **Skill** | `skills/readable-code/` – hand-written `SKILL.md` + `references/` | The product. Prose quality matters, so it is authored, not generated |
 | **Adapters** | Generated managed blocks + manifests for 10+ harnesses | Distribution. Generated because they must be byte-identical |
 | **Linter** | `taorc-lint`, 10 high-precision rules, bundled in the skill's `scripts/` | Objective scoring for evals; a fix-loop the agent can close |
@@ -152,7 +152,7 @@ Required: `id`, `slug`, `category`, `title`, `instruction`, `chapter`, `severity
 
 The entry above shows `lintable: true` to illustrate the field. In the shipped catalog every rule is `lintable: false` until MS4 adds the matching `scripts/rules/*/` file, because CI checks that pairing in both directions.
 
-- `chapter: 0` marks original content (the `X` category), which has no book source.
+- `chapter: 0` marks original content with no book source. That is the entire `X` category, plus any rule in another category that the book does not cover; see §3.2.
 - `severity` ranks findings in review mode and sets the linter's level for lintable rules. CI asserts the two never disagree: a lint rule's `severity` must equal its catalog entry's.
 - `applies_to` is a list of language identifiers (`python`, `typescript`, `go`, `rust`, `java`, `csharp`) or the literal `all`. It exists for the handful of rules that are language-specific — a rule about docstring conventions does not apply to Go. Defaults to `[all]` when omitted.
 - `lint_rule` is required when `lintable: true` and must name a rule file that exists under `scripts/rules/`; CI checks both directions.
@@ -166,14 +166,16 @@ The entry above shows `lintable: true` to illustrate the field. In the shipped c
 | `A` | Aesthetics | 4 | 5 | 7 | `naming.md` |
 | `C` | Comments | 5, 6 | 14 | 18 | `comments.md` |
 | `F` | Control flow | 7 | 7 | 7 | `control-flow.md` |
-| `E` | Expressions | 8 | 5 | 5 | `control-flow.md` |
+| `E` | Expressions | 8 | 5 | 6 | `control-flow.md` |
 | `V` | Variables | 9 | 5 | 5 | `control-flow.md` |
-| `S` | Structure | 10–13 | 8 | 8 | `structure.md` |
+| `S` | Structure | 10–13 | 8 | 9 | `structure.md` |
 | `T` | Tests | 14 | 6 | 6 | `tests.md` |
 | `X` | Agent guardrails | – | 8 | 8 | in `SKILL.md` |
-| | | | **73** | **83** | |
+| | | | **73** | **85** | |
 
-The **Est.** column is the pre-drafting estimate this document and PRD R1.1 were sized against; **Shipped** is the catalog as built. All of the overrun is in chapters 2–6, which turned out to hold more separable rules than estimated; chapters 7–14 came in exactly on estimate, as §11 predicted they would. The 65–75 target in PRD R1.1 is superseded by this table.
+The **Est.** column is the pre-drafting estimate this document and PRD R1.1 were sized against; **Shipped** is the catalog as built. Nearly all the overrun is in chapters 2–6, which held more separable rules than estimated; chapters 7–14 came in at 32 against an estimate of 31, as §11 predicted they would. The 65–75 target in PRD R1.1 is superseded by this table.
+
+`chapter: 0` marks a rule with no source in the book. That is the whole `X` category by construction, and `E4`, which catalogues a habit common in generated code that the book never discusses. Two further departures — `S6` inverting chapter 10's emphasis, and chapter 7's `goto` section having no rule — are recorded in `references/chapter-map.md` and in the `rationale` of the rule concerned.
 
 ### 3.2.1 Precedence
 
@@ -195,7 +197,7 @@ Hard ceiling 5,000; target 4,400 to leave headroom for growth.
 | The premise | 150 | The Fundamental Theorem, in our words, and why it binds agents specifically |
 | When this applies / modes | 350 | Mode table, mode inference |
 | Operating loop | 500 | 5 steps |
-| Rule catalog | 2,200 | All 73 rules, one line each, in tables by category |
+| Rule catalog | 2,200 | All 85 rules, one line each, in tables by category |
 | Precedence | 250 | The 5 tiebreakers |
 | Self-check | 350 | The pre-delivery checklist |
 | Reference map | 250 | When to load which file |
@@ -360,7 +362,7 @@ Note that four of the most recognizable tells — plan narration, banners, emoji
 | — | `prompts/*.md` are **not** generated; see below |
 | `.claude-plugin/*`, `.codex-plugin/*`, `gemini-extension.json` | version field sync only |
 
-**The prompts are hand-written.** Condensing 73 rules into 800 tokens is an editorial judgment about which rules survive, not a mechanical transform, and §1's policy says prose that must read well is authored. `build.py` does not touch `prompts/`; CI still enforces their token budgets (check 4) and that every ID they cite exists (check 2). Treating them as generated would have meant inventing a selection algorithm nobody could tune.
+**The prompts are hand-written.** Condensing 85 rules into 800 tokens is an editorial judgment about which rules survive, not a mechanical transform, and §1's policy says prose that must read well is authored. `build.py` does not touch `prompts/`; CI still enforces their token budgets (check 4) and that every ID they cite exists (check 2). Treating them as generated would have meant inventing a selection algorithm nobody could tune.
 
 Managed block markers:
 
@@ -621,7 +623,7 @@ taorc_lint.py [paths...]
 1. **Schema** – `catalog/rules.yaml` violates `catalog/schema.json`.
 2. **Referential integrity** – an ID cited in any `.md`, lint rule, or eval scorer that is not in the catalog; or a catalog rule missing from `SKILL.md`'s catalog table. *This is the check that holds the whole design together.*
 
-   The second half is deliberately weaker than "cited somewhere": `SKILL.md` lists all 73, so appearing there is the floor. Requiring a citation in the managed block, the self-check, or `ai-code-tells.md` would drag every rule into those artifacts to satisfy CI—which is precisely how the block stops being a summary. Categories `A` and `P` legitimately live only in the catalog table and `naming.md`.
+   The second half is deliberately weaker than "cited somewhere": `SKILL.md` lists all 85, so appearing there is the floor. Requiring a citation in the managed block, the self-check, or `ai-code-tells.md` would drag every rule into those artifacts to satisfy CI—which is precisely how the block stops being a summary. Categories `A` and `P` legitimately live only in the catalog table and `naming.md`.
 3. **Skill spec** – `skills-ref validate ./skills/readable-code` fails, or `name` ≠ directory name.
 4. **Budgets** – `SKILL.md` > 5,000 tokens or > 500 lines (PRD R2.2); `templates/agent-block.md` > 700 tokens (§6.2); `system-prompt.md` > 800; `system-prompt-mini.md` > 150. Tokens measured with a real tokenizer, not word count.
 5. **Adapter drift** – any generated file differs from what `build.py` would produce. (Run `build.py`, `git diff --exit-code`.)
@@ -737,7 +739,7 @@ Given Q3 (the book is available), the catalog is authored against the source rat
 |---|---|---|
 | **MS0** | Repo skeleton, `catalog/schema.json`, `build.py`, `validate.py`, CI green on an empty catalog | Generation and validation work before content exists |
 | **MS1** | Catalog drafted, chapters 1–6 (P, N, A, C – 44 rules; original estimate of 34 was revised upward during drafting), verified per §11 | Josh's verification pass |
-| **MS2** | Catalog complete (83 rules), `chapter-map.md`, `precedence` in the catalog | Referential integrity green |
+| **MS2** | Catalog complete (85 rules), `chapter-map.md`, `precedence` in the catalog | Referential integrity green |
 | **MS3** | `SKILL.md` + all 9 reference files | Token budget green; manual read-through |
 | **MS4** | `taorc-lint` + fixtures + configs | M5 false-positive target met |
 | **MS5** | Adapters + installers + manifests | Installer + placement-matrix tests green on 3 OSes; 4-harness manual pass recorded in `docs/harness-verification.md` |
@@ -753,7 +755,7 @@ MS7 is the milestone most likely to be skipped and least likely to be skippable.
 | Risk | Mitigation |
 |---|---|
 | **The `description` under-triggers on implicit tasks** – the skill only fires when someone says "readable" | M4 gated on the 100-prompt tier-1 suite (§10.4), cheap enough to run on every `description` change; tier-2 spot check confirms the proxy tracks reality |
-| **The catalog is too long for the agent to apply** – 73 rules exceeds working attention | The self-check (§4.5) is only 10 items, ordered by observed failure frequency. If evals show low application, cut the catalog to the 30 that move metrics, and move the rest to references |
+| **The catalog is too long for the agent to apply** – 85 rules exceeds working attention | The self-check (§4.5) is only 10 items, ordered by observed failure frequency. If evals show low application, cut the catalog to the 30 that move metrics, and move the rest to references |
 | **Generated adapters drift silently** | CI check 5 (§9) makes drift a build failure, not a discovery |
 | **`taorc-lint` fires on the repo's own examples** | Run it over `examples/` in CI; every intentional violation carries an inline suppression, which also proves suppression works |
 | **Over-application despite guardrails** | M3 measured on 3 of 10 scenarios; the "report what you left alone" step (§4.4 step 5) gives the agent an outlet |

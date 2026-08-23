@@ -1,8 +1,8 @@
 # Chapter map
 
-Every rule in this catalog traces back to a chapter of *The Art of Readable Code* by Dustin Boswell and Trevor Foucher (O'Reilly, 2011), except the `X` guardrails, which are original to this project. This file is the attribution record and the pointer back to the source.
+Every rule in this catalog traces back to a chapter of *The Art of Readable Code* (O'Reilly, 2011), except the rules listed under "Original content" below. This file is the attribution record and the pointer back to the source.
 
-The chapter descriptions below are deliberately thin — just enough to find the right chapter. They are not summaries, and they are not a substitute for the book. If a rule here is useful to you, the chapter it came from is worth reading in full; the reasoning, the counterexamples, and the judgment calls did not survive the compression into one-line rules.
+The chapter descriptions here are deliberately thin — just enough to find the right chapter. They are not summaries, and they are not a substitute for the book. If a rule here is useful to you, the chapter it came from is worth reading in full; the reasoning, the counterexamples, and the judgment calls did not survive the compression into one-line rules.
 
 taorc is unofficial and is not affiliated with or endorsed by O'Reilly Media or the authors. Please buy the book.
 
@@ -12,7 +12,7 @@ What readability is for, and the standard the rest of the book argues from.
 
 | Rule | What it says                                                                              |
 | ---- | ----------------------------------------------------------------------------------------- |
-| `P1` | Minimize the time it would take someone else to understand the code                       |
+| `P1` | Optimize every coding decision for how fast an unfamiliar reader can follow it            |
 | `P2` | Fewer lines is usually good, but it is not the same goal as readability                   |
 | `P3` | Treat an apparent conflict between readability and other goals as a signal to look harder |
 
@@ -50,15 +50,15 @@ Choosing names that cannot be read the wrong way.
 
 Visual layout, grouping, and consistent formatting.
 
-| Rule | What it says                                                               |
-| ---- | -------------------------------------------------------------------------- |
-| `A1` | Give structurally similar code the same visual shape, then make it compact |
-| `A2` | Use a helper method when repeated detail prevents a consistent layout      |
-| `A3` | Align repeated similar lines into columns when it improves skimming        |
-| `A4` | Pick a meaningful order and use it consistently                            |
-| `A5` | Organize declarations into logical blocks                                  |
-| `A6` | Break large blocks into logical paragraphs                                 |
-| `A7` | Prefer consistency over the personally preferred style                     |
+| Rule | What it says                                                                   |
+| ---- | ------------------------------------------------------------------------------ |
+| `A1` | Give structurally similar code the same visual shape, then make it compact     |
+| `A2` | Use a helper method when repeated detail prevents a consistent layout          |
+| `A3` | Align repeated similar lines into columns when it improves skimming            |
+| `A4` | Give unordered items a deliberate order, then repeat it everywhere they appear |
+| `A5` | Organize declarations into logical blocks                                      |
+| `A6` | Break large blocks into logical paragraphs                                     |
+| `A7` | Prefer consistency over the personally preferred style                         |
 
 ## Chapter 5
 
@@ -81,16 +81,16 @@ Deciding what is worth a comment.
 
 Making a comment precise and compact.
 
-| Rule  | What it says                                                               |
-| ----- | -------------------------------------------------------------------------- |
-| `C11` | Keep comments compact and information-dense                                |
-| `C12` | Avoid a pronoun a reader would have to work to resolve                     |
-| `C13` | Polish comments into direct, precise sentences                             |
-| `C14` | Describe a function's behavior precisely, including its corner cases       |
-| `C15` | Use a carefully chosen input/output example to clarify corner cases        |
-| `C16` | State the intent behind the code, not just an account of its mechanics     |
-| `C17` | Label a mysterious function argument inline at the call site               |
-| `C18` | Reach for an established term of art instead of describing it from scratch |
+| Rule  | What it says                                                                |
+| ----- | --------------------------------------------------------------------------- |
+| `C11` | Keep comments compact and information-dense                                 |
+| `C12` | Avoid a pronoun a reader would have to work to resolve                      |
+| `C13` | Polish comments into direct, precise sentences                              |
+| `C14` | Describe a function's behavior precisely, including its corner cases        |
+| `C15` | Show a corner case with a worked input and output rather than describing it |
+| `C16` | State the intent behind the code, not just an account of its mechanics      |
+| `C17` | Label a mysterious function argument inline at the call site                |
+| `C18` | Reach for an established term of art instead of describing it from scratch  |
 
 ## Chapter 7
 
@@ -115,8 +115,8 @@ Cutting large expressions down to readable pieces.
 | `E1` | Name a subexpression with a variable that says what it is                                 |
 | `E2` | Give a recurring condition a short name even when it needs no explanation                 |
 | `E3` | Rewrite a negated group into whichever equivalent form states the idea more directly      |
-| `E4` | State a condition directly instead of comparing it against a boolean or a length          |
 | `E5` | Break a large expression into named steps rather than compressing it into one clever line |
+| `E6` | Do not use short-circuit operators to make one line do two jobs                           |
 
 ## Chapter 9
 
@@ -138,6 +138,8 @@ Pulling unrelated subproblems out of a function.
 | ---- | --------------------------------------------------------------------------------------- |
 | `S1` | Extract a self-contained subproblem into a function describable without its caller      |
 | `S2` | Keep general-purpose code apart from project logic, and name its home for what it holds |
+| `S6` | Do not add an abstraction until a second caller needs it                                |
+| `S9` | Wrap an awkward interface in the one you wish it had                                    |
 
 ## Chapter 11
 
@@ -162,7 +164,6 @@ Writing and keeping less code.
 | Rule | What it says                                                              |
 | ---- | ------------------------------------------------------------------------- |
 | `S5` | Question the requirement before writing code to satisfy it                |
-| `S6` | Do not add an abstraction until a second caller needs it                  |
 | `S7` | Delete code that cannot change the outcome                                |
 | `S8` | Know the standard library well enough to reach for it before rewriting it |
 
@@ -181,10 +182,11 @@ Tests that stay readable, and what they say about the design.
 
 ## Original content (no chapter)
 
-The `X` category has no book source. These rules govern how an *agent* applies the rest of the catalog — restraint about diff size, deference to a project's existing conventions, and separating a cleanup from a behavior change. The book was written for humans editing their own code and had no reason to address any of it.
+These rules carry `chapter: 0` because they have no source in the book. Most are the `X` guardrails, which govern how an *agent* applies the rest of the catalog — restraint about diff size, deference to a project's existing conventions, separating a cleanup from a behavior change. The book was written for humans editing their own code and had no reason to address any of it. `E4` is here for a different reason: it is a common habit in generated code that the book simply never discusses.
 
 | Rule | What it says                                                                           |
 | ---- | -------------------------------------------------------------------------------------- |
+| `E4` | State a condition directly instead of comparing it against a boolean or a length       |
 | `X1` | Do not widen a diff to satisfy a readability rule                                      |
 | `X2` | Match the file's existing vocabulary and conventions over this catalog's preference    |
 | `X3` | Never rename a public or exported symbol unless asked                                  |
@@ -194,6 +196,11 @@ The `X` category has no book source. These rules govern how an *agent* applies t
 | `X7` | Do not narrate your own plan or process in code comments                               |
 | `X8` | Do not add banner comments, section dividers, or emoji to code                         |
 
-## Coverage note
+## Coverage notes
 
-Chapters 1 through 6 produced 44 rules against an original estimate of 34, and chapters 7 through 14 produced 31 against an estimate of 31. The catalog's totals in `v1-design-doc.md` §3.2 and the PRD's 65-75 target were both sized before drafting; the shipped total is 83. Rule IDs are permanent regardless (`v1-design-doc.md` §3.3), so this is recorded rather than corrected.
+Chapters 1 through 6 produced 44 rules against an original estimate of 34, and chapters 7 through 14 produced 32 against an estimate of 31. The totals in `v1-design-doc.md` §3.2 and the PRD's 65-75 target were both sized before drafting; the shipped total is 85. Rule IDs are permanent regardless (`v1-design-doc.md` §3.3), so this is recorded rather than corrected.
+
+Two deliberate departures, both recorded in the `rationale` of the rule concerned:
+
+- `S6` inverts chapter 10's emphasis. That chapter warns against over-extraction but argues most human authors under-extract; this catalog is written for agents, which fail in the opposite direction. `S1` carries the book's own emphasis.
+- Chapter 7's section on `goto` has no rule. It is near-irrelevant to the languages this catalog targets, and `F7` covers the general point about constructs that break linear execution order.

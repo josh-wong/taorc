@@ -5,7 +5,7 @@ rules:
   - id: P1
     slug: minimize-time-to-understand
     category: principles
-    title: Minimize the time it would take someone else to understand the code
+    title: Optimize every coding decision for how fast an unfamiliar reader can follow it
     instruction: >
       Treat "how long would it take an unfamiliar reader to understand this
       and confirm it's correct" as the metric a coding decision should
@@ -409,7 +409,7 @@ rules:
   - id: A4
     slug: order-code-by-meaning
     category: aesthetics
-    title: Pick a meaningful order and use it consistently
+    title: Give unordered items a deliberate order, then repeat it everywhere they appear
     instruction: >
       When several declarations or related items have no order forced by
       correctness, choose one that means something to the reader (matching
@@ -770,7 +770,7 @@ rules:
   - id: C15
     slug: illustrate-corner-cases-with-input-output-comments
     category: comments
-    title: Use a carefully chosen input/output example to clarify corner cases
+    title: Show a corner case with a worked input and output rather than describing it
     instruction: >
       When a function's behavior is hard to describe compactly in prose,
       include a worked example that demonstrates the important boundary,
@@ -911,15 +911,19 @@ rules:
     severity: suggestion
     lintable: false
     examples:
-      - lang: java
+      - lang: csharp
         before: |
+          int attempt = 0;
           do {
-              node = node.next;
-          } while (node != null && !node.matches(query));
+              response = Send(request);
+              attempt++;
+          } while (response.IsTransientFailure && attempt < MaxAttempts);
         after: |
-          node = node.next;
-          while (node != null && !node.matches(query)) {
-              node = node.next;
+          Response response = Send(request);
+          int attempt = 1;
+          while (response.IsTransientFailure && attempt < MaxAttempts) {
+              response = Send(request);
+              attempt++;
           }
 
   - id: F5
@@ -1025,11 +1029,11 @@ rules:
     severity: suggestion
     lintable: false
     examples:
-      - lang: python
-        before: 'if line.split(":")[0].strip() == "username":'
+      - lang: typescript
+        before: "if (orders[orders.length - 1].placedAt < cutoff) archive(orders);"
         after: |
-          field_name = line.split(":")[0].strip()
-          if field_name == "username":
+          const mostRecentOrder = orders[orders.length - 1];
+          if (mostRecentOrder.placedAt < cutoff) archive(orders);
 
   - id: E2
     slug: introduce-a-summary-variable
@@ -1085,7 +1089,12 @@ rules:
       length of zero adds expression for no added meaning, and an equality
       test against a boolean literal invites the classic mistake of writing an
       assignment instead.
-    chapter: 8
+    rationale: >
+      Original content, with no source in the book: chapter 8 is about cutting
+      large expressions down, and says nothing about redundant comparisons.
+      It sits in this category because it is an expression-level habit, and it
+      is catalogued because it is a frequent tell in generated code.
+    chapter: 0
     severity: suggestion
     lintable: false
     examples:
@@ -1101,10 +1110,9 @@ rules:
       When an expression outgrows what a reader can hold at once, split it
       into statements with named intermediates, or look for a different
       formulation of the problem that is smaller by construction rather than
-      smaller by compression. Short-circuit operators pressed into making one
-      line do two jobs — an assignment hidden inside a condition, a side
-      effect riding on an or — trade a line saved for a line that has to be
-      read twice.
+      smaller by compression. When an expression resists both, that difficulty
+      is usually telling you the problem has been framed awkwardly, not that
+      the expression needs more cleverness.
     chapter: 8
     severity: warning
     lintable: false
@@ -1115,6 +1123,32 @@ rules:
           const handlingFee = order.total * 0.02;
           const expeditingFee = order.expedited ? 15 : 0;
           const fee = handlingFee + expeditingFee;
+
+  - id: E6
+    slug: do-not-abuse-short-circuit-logic
+    category: expressions
+    title: Do not use short-circuit operators to make one line do two jobs
+    instruction: >
+      Boolean operators are for computing a boolean. Using them to smuggle in
+      control flow or a side effect — an assignment hidden inside a condition,
+      a call that runs only because it sits to the right of an and — saves a
+      line and costs the reader a second pass to work out that the expression
+      was never really a question. Write the condition as a condition and the
+      action as a statement.
+    chapter: 8
+    severity: warning
+    lintable: false
+    examples:
+      - lang: javascript
+        before: "user && user.isAdmin && grantAccess(user);"
+        after: |
+          if (user && user.isAdmin) {
+            grantAccess(user);
+          }
+    exceptions: >
+      A short-circuit default such as `x = y || fallback` is idiomatic in many
+      languages and reads as one idea; this rule targets operators used to run
+      code, not to choose a value.
 
   # --- V: Variables and scope (chapter 9) ---
 
@@ -1408,7 +1442,13 @@ rules:
       happens, in exchange for flexibility nothing is using. Write it inline,
       and extract it when a second caller arrives and shows what the shared
       shape really is.
-    chapter: 13
+    rationale: >
+      Chapter 10 warns against over-extraction, but its emphasis runs the
+      other way: it argues most human authors do not extract aggressively
+      enough. This rule inverts that emphasis deliberately, because the
+      failure it guards against is the one generated code actually exhibits.
+      Read alongside `S1`, which pushes in the book's direction.
+    chapter: 10
     severity: warning
     lintable: false
     examples:
@@ -1472,6 +1512,46 @@ rules:
               else:
                   counts[tag] = 1
         after: "counts = Counter(tags)"
+
+  - id: S9
+    slug: wrap-awkward-interfaces
+    category: structure
+    title: Wrap an awkward interface in the one you wish it had
+    instruction: >
+      When a library or API is cumbersome to call — demanding setup, returning
+      a shape you have to convert, taking parameters irrelevant to your use —
+      write a small wrapper presenting the interface your code actually wants,
+      and call that everywhere. The glue that adapts inputs and outputs is
+      rarely part of your program's real logic, and leaving it inline mixes it
+      with the logic that is.
+    chapter: 10
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: go
+        before: |
+          // Repeated at every call site that stores an avatar.
+          _, err := client.PutObject(ctx, &s3.PutObjectInput{
+              Bucket:      aws.String(avatarBucket),
+              Key:         aws.String("avatars/" + userID + ".png"),
+              Body:        bytes.NewReader(png),
+              ContentType: aws.String("image/png"),
+              ACL:         types.ObjectCannedACLPrivate,
+          })
+        after: |
+          func storeAvatar(ctx context.Context, userID string, png []byte) error {
+              _, err := client.PutObject(ctx, &s3.PutObjectInput{
+                  Bucket:      aws.String(avatarBucket),
+                  Key:         aws.String("avatars/" + userID + ".png"),
+                  Body:        bytes.NewReader(png),
+                  ContentType: aws.String("image/png"),
+                  ACL:         types.ObjectCannedACLPrivate,
+              })
+              return err
+          }
+
+          // At every call site:
+          err := storeAvatar(ctx, userID, png)
 
   # --- T: Tests and readability (chapter 14) ---
 
