@@ -825,3 +825,938 @@ rules:
     chapter: 6
     severity: suggestion
     lintable: false
+
+  # --- F: Control flow (chapter 7) ---
+
+  - id: F1
+    slug: order-comparison-arguments-by-volatility
+    category: control-flow
+    title: Put the value being examined on the left of a comparison and the value it is measured against on the right
+    instruction: >
+      Write a comparison in the order a reader would say it aloud: the
+      quantity you are asking about first, the constant or stable value it is
+      measured against second. Reversing the two forces the reader to flip
+      the expression mentally before they can answer the question it asks.
+    chapter: 7
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: typescript
+        before: "if (MAX_RETRIES > attempt) { ... }"
+        after: "if (attempt < MAX_RETRIES) { ... }"
+
+  - id: F2
+    slug: order-if-else-blocks-deliberately
+    category: control-flow
+    title: Put the positive, the simpler, or the more interesting case first
+    instruction: >
+      When either branch could be written first, lead with the affirmative
+      form of the condition rather than its negation, with the shorter branch
+      when one is much shorter, and with the case a reader came to this code
+      to find. These preferences occasionally pull against each other; when
+      they do, pick the order that reaches the branch the reader cares about
+      soonest.
+    chapter: 7
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: typescript
+        before: |
+          if (!user.isActive) {
+            showReactivationPrompt();
+          } else {
+            loadDashboard();
+          }
+        after: |
+          if (user.isActive) {
+            loadDashboard();
+          } else {
+            showReactivationPrompt();
+          }
+
+  - id: F3
+    slug: limit-ternaries-to-simple-choices
+    category: control-flow
+    title: Reach for a conditional expression only when it is genuinely quicker to understand than an if/else
+    instruction: >
+      A ternary earns its place for a simple either/or choice between two
+      values. Once it carries nested conditions, side effects, or long
+      branches, the lines it saves cost more reading time than they save, and
+      a plain if/else states the same logic in a form the reader can scan.
+    chapter: 7
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: javascript
+        before: 'const label = n === 0 ? "none" : n === 1 ? "one" : n < 10 ? "a few" : "many";'
+        after: |
+          function describeCount(n) {
+            if (n === 0) return "none";
+            if (n === 1) return "one";
+            if (n < 10) return "a few";
+            return "many";
+          }
+
+  - id: F4
+    slug: avoid-do-while-loops
+    category: control-flow
+    title: Avoid a loop whose condition is only visible after its body
+    instruction: >
+      A do/while states what governs the loop below the code it governs, so a
+      reader works through the body once without knowing what controls it,
+      and a continue inside one jumps to a place many readers guess wrong.
+      Restructure as a while or for loop with the condition stated up front,
+      even when that costs a duplicated line.
+    chapter: 7
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: java
+        before: |
+          do {
+              node = node.next;
+          } while (node != null && !node.matches(query));
+        after: |
+          node = node.next;
+          while (node != null && !node.matches(query)) {
+              node = node.next;
+          }
+
+  - id: F5
+    slug: return-early-from-functions
+    category: control-flow
+    title: Handle the trivial and invalid cases up front and return immediately
+    instruction: >
+      Deal with empty input, invalid arguments, and other special cases at the
+      top of a function and return from each one right away, so everything
+      after them handles only the ordinary case and no longer sits inside a
+      conditional. The reader then has no accumulated conditions to keep track
+      of while reading the part that matters.
+    chapter: 7
+    severity: warning
+    lintable: false
+    examples:
+      - lang: go
+        before: |
+          func Total(items []Item) (int, error) {
+              if items != nil {
+                  if len(items) > 0 {
+                      sum := 0
+                      for _, it := range items {
+                          sum += it.Price
+                      }
+                      return sum, nil
+                  }
+                  return 0, nil
+              }
+              return 0, errors.New("nil items")
+          }
+        after: |
+          func Total(items []Item) (int, error) {
+              if items == nil {
+                  return 0, errors.New("nil items")
+              }
+              sum := 0
+              for _, it := range items {
+                  sum += it.Price
+              }
+              return sum, nil
+          }
+
+  - id: F6
+    slug: minimize-nesting
+    category: control-flow
+    title: Keep nesting shallow, and treat one more level as a signal to restructure
+    instruction: >
+      Every level of nesting is another condition the reader must hold in mind
+      to know whether a line runs at all. Deep nesting is usually residue from
+      changes made one at a time, each wrapping working code in one more
+      block, so treat the urge to add a level as the moment to reorganize
+      instead. Inside a loop, continue past the cases you want to skip; inside
+      a function, return early.
+    chapter: 7
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          for record in records:
+              if record.is_valid:
+                  if record.owner is not None:
+                      if not record.archived:
+                          publish(record)
+        after: |
+          for record in records:
+              if not record.is_valid:
+                  continue
+              if record.owner is None:
+                  continue
+              if record.archived:
+                  continue
+              publish(record)
+
+  - id: F7
+    slug: use-flow-obscuring-constructs-sparingly
+    category: control-flow
+    title: Use constructs that break linear execution order sparingly
+    instruction: >
+      Threads, signal handlers, callbacks invoked later, exceptions thrown
+      across module boundaries, and dynamic dispatch all mean the next line to
+      run is not the next line on screen. Each is worth its cost where it
+      solves a real problem, and none is worth it as a default shape, because
+      every one of them takes away the reader's ability to answer "what
+      happens next" by reading downward.
+    chapter: 7
+    severity: suggestion
+    lintable: false
+
+  # --- E: Expressions (chapter 8) ---
+
+  - id: E1
+    slug: introduce-an-explaining-variable
+    category: expressions
+    title: Name a subexpression with a variable that says what it is
+    instruction: >
+      When part of a larger expression takes a moment to identify, assign it
+      to a variable whose name states what it holds, and use that variable in
+      the expression. The extra line names the concept once for every future
+      reader instead of asking each of them to work it out again.
+    chapter: 8
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: python
+        before: 'if line.split(":")[0].strip() == "username":'
+        after: |
+          field_name = line.split(":")[0].strip()
+          if field_name == "username":
+
+  - id: E2
+    slug: introduce-a-summary-variable
+    category: expressions
+    title: Give a recurring condition a short name even when it needs no explanation
+    instruction: >
+      A compound condition a reader can follow but has to reassemble at every
+      appearance is worth naming once as a boolean whose name states the idea.
+      Unlike an explaining variable, this is not about clarifying something
+      obscure; it is about letting the code talk about the concept instead of
+      restating its mechanics each time.
+    chapter: 8
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: csharp
+        before: |
+          if (request.UserId == document.OwnerId || request.Roles.Contains("admin")) { ... }
+          // ... elsewhere in the same method ...
+          if (request.UserId == document.OwnerId || request.Roles.Contains("admin")) { ... }
+        after: |
+          bool canEditDocument = request.UserId == document.OwnerId
+                                 || request.Roles.Contains("admin");
+          if (canEditDocument) { ... }
+          // ... elsewhere in the same method ...
+          if (canEditDocument) { ... }
+
+  - id: E3
+    slug: simplify-negated-compound-conditions
+    category: expressions
+    title: Rewrite a negated group into whichever equivalent form states the idea more directly
+    instruction: >
+      A condition that negates a whole group is often clearer with the
+      negation distributed across its parts, and sometimes the reverse is
+      true. Write both forms and keep the one a reader can evaluate without
+      doing algebra first; the goal is directness, not a mechanical
+      preference for either shape.
+    chapter: 8
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: python
+        before: "if not (record.is_synced and record.checksum_matches):"
+        after: "if not record.is_synced or not record.checksum_matches:"
+
+  - id: E4
+    slug: state-conditions-directly
+    category: expressions
+    title: State a condition directly instead of comparing it against a boolean or a length
+    instruction: >
+      Test a boolean by using it, and test a collection for content with the
+      language's own idiom for emptiness. Comparing against true, false, or a
+      length of zero adds expression for no added meaning, and an equality
+      test against a boolean literal invites the classic mistake of writing an
+      assignment instead.
+    chapter: 8
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: python
+        before: "if config.verbose == True and len(warnings) > 0:"
+        after: "if config.verbose and warnings:"
+
+  - id: E5
+    slug: break-down-giant-expressions
+    category: expressions
+    title: Break a large expression into named steps rather than compressing it into one clever line
+    instruction: >
+      When an expression outgrows what a reader can hold at once, split it
+      into statements with named intermediates, or look for a different
+      formulation of the problem that is smaller by construction rather than
+      smaller by compression. Short-circuit operators pressed into making one
+      line do two jobs — an assignment hidden inside a condition, a side
+      effect riding on an or — trade a line saved for a line that has to be
+      read twice.
+    chapter: 8
+    severity: warning
+    lintable: false
+    examples:
+      - lang: javascript
+        before: "const fee = order.expedited ? order.total * 0.02 + 15 : order.total * 0.02;"
+        after: |
+          const handlingFee = order.total * 0.02;
+          const expeditingFee = order.expedited ? 15 : 0;
+          const fee = handlingFee + expeditingFee;
+
+  # --- V: Variables and scope (chapter 9) ---
+
+  - id: V1
+    slug: remove-variables-that-add-nothing
+    category: variables
+    title: Remove a variable that only carries a value from one line to the next
+    instruction: >
+      A temporary assigned once, used once on the following line, and named no
+      better than the expression it holds gives the reader an extra name to
+      track in exchange for nothing. Use the expression where it is needed.
+      Keep the variable when its name explains something the expression does
+      not, or when more than one line uses it.
+    chapter: 9
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          def latest_backup(paths):
+              result = sorted(paths, key=os.path.getmtime)[-1]
+              return result
+        after: |
+          def latest_backup(paths):
+              return sorted(paths, key=os.path.getmtime)[-1]
+
+  - id: V2
+    slug: narrow-variable-scope
+    category: variables
+    title: Narrow each variable's scope to the smallest region that needs it
+    instruction: >
+      Move a variable inward wherever you can: a global to a class member, a
+      member to a local, a local to the block that uses it. The cost of a
+      widely scoped variable is not the variable itself but that every line
+      within its scope becomes a line the reader must check for a
+      modification.
+    chapter: 9
+    severity: warning
+    lintable: false
+    examples:
+      - lang: java
+        before: |
+          class ReportBuilder {
+              private List<String> sectionLines;   // only ever used inside renderSection
+
+              void renderSection(Section s) {
+                  sectionLines = new ArrayList<>();
+                  ...
+              }
+          }
+        after: |
+          class ReportBuilder {
+              void renderSection(Section s) {
+                  List<String> sectionLines = new ArrayList<>();
+                  ...
+              }
+          }
+
+  - id: V3
+    slug: declare-variables-at-first-use
+    category: variables
+    title: Declare a variable immediately before its first use
+    instruction: >
+      Collecting every declaration at the top of a function was once a
+      language requirement and is now only a way of separating a name from the
+      code that gives it meaning. Declare each variable where it first
+      matters, so the reader meets the name and the reason for it at the same
+      moment.
+    chapter: 9
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: javascript
+        before: |
+          function renderInvoice(order) {
+            let subtotal, tax, dueDate, lineItems;
+            lineItems = order.items.map(toLineItem);
+            subtotal = lineItems.reduce((sum, li) => sum + li.amount, 0);
+            tax = subtotal * TAX_RATE;
+            dueDate = addDays(order.placedAt, 30);
+            ...
+          }
+        after: |
+          function renderInvoice(order) {
+            const lineItems = order.items.map(toLineItem);
+            const subtotal = lineItems.reduce((sum, li) => sum + li.amount, 0);
+            const tax = subtotal * TAX_RATE;
+            const dueDate = addDays(order.placedAt, 30);
+            ...
+          }
+
+  - id: V4
+    slug: prefer-write-once-variables
+    category: variables
+    title: Prefer values assigned once over variables that change
+    instruction: >
+      A variable reassigned in several places forces the reader to find every
+      assignment before they can say what it holds at a given line. Use the
+      language's immutable binding by default, and treat needing reassignment
+      as a prompt to check whether the surrounding code wants to be a function
+      that returns a value instead.
+    chapter: 9
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: typescript
+        before: |
+          let endpoint = BASE_URL;
+          if (useStaging) endpoint = STAGING_URL;
+          if (region) endpoint = `${endpoint}/${region}`;
+        after: |
+          const host = useStaging ? STAGING_URL : BASE_URL;
+          const endpoint = region ? `${host}/${region}` : host;
+
+  - id: V5
+    slug: replace-control-flow-flags-with-direct-exits
+    category: variables
+    title: Exit a loop directly instead of steering it with a flag variable
+    instruction: >
+      A boolean whose only job is telling a loop when to stop duplicates
+      control flow the language already expresses, and it delays the exit
+      until the next time the condition is checked. Use break or return at the
+      point the decision is actually made, so the exit sits where the reader
+      is already looking.
+    chapter: 9
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          found = False
+          match = None
+          for row in rows:
+              if not found and row.id == target:
+                  match = row
+                  found = True
+          return match
+        after: |
+          for row in rows:
+              if row.id == target:
+                  return row
+          return None
+
+  # --- S: Structure (chapters 10-13) ---
+
+  - id: S1
+    slug: extract-unrelated-subproblems
+    category: structure
+    title: Extract a self-contained subproblem into a function describable without its caller
+    instruction: >
+      When part of a block solves a problem that is not the block's stated
+      purpose — parsing a format, computing a distance, normalizing a key —
+      move it into a function whose one-line description mentions nothing
+      about where it is called from. Being unable to write that description
+      without naming the caller's feature is the sign the split is in the
+      wrong place.
+    chapter: 10
+    severity: warning
+    lintable: false
+    examples:
+      - lang: go
+        before: |
+          func RenderProfile(u User) string {
+              initials := ""
+              for _, part := range strings.Fields(u.FullName) {
+                  initials += strings.ToUpper(part[:1])
+              }
+              return fmt.Sprintf("%s (%s)", u.FullName, initials)
+          }
+        after: |
+          func initials(fullName string) string {
+              out := ""
+              for _, part := range strings.Fields(fullName) {
+                  out += strings.ToUpper(part[:1])
+              }
+              return out
+          }
+
+          func RenderProfile(u User) string {
+              return fmt.Sprintf("%s (%s)", u.FullName, initials(u.FullName))
+          }
+
+  - id: S2
+    slug: separate-general-code-and-name-its-home
+    category: structure
+    title: Keep general-purpose code apart from project logic, and name its home for what it holds
+    instruction: >
+      Code that would make sense in another project belongs somewhere separate
+      from code that only makes sense in this one, so each can be read and
+      tested without the other. Name that home for what lives there — retry
+      behavior, date arithmetic, currency formatting — because a module called
+      utils or helpers records only that nobody decided, and it will go on
+      accepting anything.
+    chapter: 10
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          # utils.py
+          def slugify(text): ...
+          def retry_with_backoff(fn): ...
+          def format_currency(cents, locale): ...
+          def load_customer_tier(customer_id): ...
+        after: |
+          # text_slugs.py
+          def slugify(text): ...
+
+          # retries.py
+          def retry_with_backoff(fn): ...
+
+          # money.py
+          def format_currency(cents, locale): ...
+
+          # customers.py  (project-specific, not a general utility)
+          def load_customer_tier(customer_id): ...
+
+  - id: S3
+    slug: do-one-task-at-a-time
+    category: structure
+    title: Make a block do one task at a time
+    instruction: >
+      List the separate things a long block actually does, then give each one
+      its own function or at least its own paragraph. Work that interleaves
+      two tasks — validating while accumulating, parsing while rendering —
+      makes the reader track both at once, and neither can be understood or
+      changed without disturbing the other.
+    chapter: 11
+    severity: warning
+    lintable: false
+    examples:
+      - lang: ruby
+        before: |
+          def import(rows)
+            errors = []
+            total = 0
+            rows.each do |row|
+              if row["amount"].nil?
+                errors << "missing amount on #{row['id']}"
+              else
+                total += row["amount"].to_i
+              end
+            end
+            [total, errors]
+          end
+        after: |
+          def validation_errors(rows)
+            rows.reject { |row| row["amount"] }
+                .map { |row| "missing amount on #{row['id']}" }
+          end
+
+          def total_amount(rows)
+            rows.filter_map { |row| row["amount"]&.to_i }.sum
+          end
+
+  - id: S4
+    slug: describe-in-plain-words-then-write-the-code
+    category: structure
+    title: Describe what the code must do in plain language, then make the code follow that description
+    instruction: >
+      State the logic in ordinary words, the way you would explain it to a
+      colleague, before or while writing it. The description usually comes out
+      shorter and better organized than the first code you would have written,
+      and when it comes out tangled, that is the design problem surfacing
+      while it is still cheap to fix.
+    chapter: 12
+    severity: suggestion
+    lintable: false
+
+  - id: S5
+    slug: question-the-requirement-first
+    category: structure
+    title: Question the requirement before writing code to satisfy it
+    instruction: >
+      The fastest code to read is code that was never written. Before
+      implementing a feature as stated, check whether a narrower version meets
+      the actual need, whether an existing path already covers most of it, and
+      whether the general case is genuinely required or merely assumed. Code
+      that does not exist has no bugs and costs no one any reading time.
+    chapter: 13
+    severity: suggestion
+    lintable: false
+
+  - id: S6
+    slug: do-not-abstract-for-a-single-caller
+    category: structure
+    title: Do not add an abstraction until a second caller needs it
+    instruction: >
+      A helper, interface, or configuration option introduced for one call
+      site adds a layer the reader must step through to find out what actually
+      happens, in exchange for flexibility nothing is using. Write it inline,
+      and extract it when a second caller arrives and shows what the shared
+      shape really is.
+    chapter: 13
+    severity: warning
+    lintable: false
+    examples:
+      - lang: typescript
+        before: |
+          interface Formatter { format(v: number): string; }
+
+          class CurrencyFormatter implements Formatter {
+            format(v: number) { return `$${v.toFixed(2)}`; }
+          }
+
+          const formatter: Formatter = new CurrencyFormatter();
+          row.textContent = formatter.format(total);
+        after: "row.textContent = `$${total.toFixed(2)}`;"
+
+  - id: S7
+    slug: delete-code-that-cannot-change-the-outcome
+    category: structure
+    title: Delete code that cannot change the outcome
+    instruction: >
+      Remove error handling for conditions the surrounding code makes
+      impossible, branches no call can reach, options no caller sets, and
+      functions nothing calls. Such code reads as though it guards a real
+      risk, so every future reader spends time identifying which risk before
+      concluding there is none. Version control keeps whatever you delete.
+    chapter: 13
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          def total_cents(prices: list[int]) -> int:
+              try:
+                  return sum(prices)
+              except ZeroDivisionError:
+                  return 0
+        after: |
+          def total_cents(prices: list[int]) -> int:
+              return sum(prices)
+
+  - id: S8
+    slug: know-and-use-the-standard-library
+    category: structure
+    title: Know the standard library well enough to reach for it before rewriting it
+    instruction: >
+      Grouping, counting, deduplicating, pairing sequences, sorting by a key,
+      and set arithmetic are already implemented, tested, and named in every
+      mainstream standard library. A hand-rolled version is more code to read
+      and its bugs belong to you. Periodically reading through the library's
+      API is among the cheapest readability investments available.
+    chapter: 13
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          counts = {}
+          for tag in tags:
+              if tag in counts:
+                  counts[tag] += 1
+              else:
+                  counts[tag] = 1
+        after: "counts = Counter(tags)"
+
+  # --- T: Tests and readability (chapter 14) ---
+
+  - id: T1
+    slug: make-the-tested-values-visible
+    category: tests
+    title: Make the values a test is actually about visible at a glance
+    instruction: >
+      Push construction, fixtures, and repeated setup behind helper functions
+      so what remains in the test body is the input under test and the
+      expectation about it. A reader should be able to see what is being
+      asserted without first reading past scaffolding that is identical in
+      every test in the file.
+    chapter: 14
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          def test_expired_session_rejected():
+              user = User(id=1, name="Ada", email="ada@example.com", verified=True)
+              session = Session(user=user, token="abc",
+                                created_at=datetime(2020, 1, 1), ttl=3600)
+              clock = FrozenClock(datetime(2020, 1, 1, 2, 0, 0))
+              assert authorize(session, clock) is False
+        after: |
+          def test_expired_session_rejected():
+              session = a_session(age_seconds=7200, ttl=3600)
+              assert authorize(session, FROZEN_NOW) is False
+
+  - id: T2
+    slug: choose-the-simplest-revealing-input
+    category: tests
+    title: Choose the simplest input that still exercises the behavior under test
+    instruction: >
+      Prefer the smallest, plainest values that trigger the case — a
+      two-element list, a single character, a round number — over
+      realistic-looking data whose details are irrelevant. Elaborate input
+      implies the details matter and sends the reader hunting for a
+      significance that is not there. Where an unusual value is the point,
+      that is exactly when it should stand out.
+    chapter: 14
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: javascript
+        before: "expect(median([84.21, 12.09, 55.5, 91.34, 7.02])).toBeCloseTo(55.5);"
+        after: "expect(median([1, 2, 3])).toBe(2);"
+
+  - id: T3
+    slug: name-tests-for-situation-and-outcome
+    category: tests
+    title: Name a test for the situation it sets up and the outcome it expects
+    instruction: >
+      A test name is read most often in a failure report, with none of the
+      test's code on screen, so it has to identify the broken behavior on its
+      own. Name the unit under test, the condition, and the expected result. A
+      name built from a number or a word like basic tells a reader staring at
+      a red build nothing at all.
+    chapter: 14
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: "def test_parse_2(): ..."
+        after: "def test_parse_rejects_timestamp_without_timezone(): ..."
+
+  - id: T4
+    slug: make-failures-explain-themselves
+    category: tests
+    title: Make a failing assertion say what went wrong without a debugger
+    instruction: >
+      Use the assertion that reports both values rather than one that collapses
+      a comparison into a single boolean, and where a comparison is
+      domain-specific, write a custom assertion that prints the difference in
+      domain terms. What a test prints on failure is its entire interface at
+      the only moment anyone reads it.
+    chapter: 14
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: "self.assertTrue(actual_total == expected_total)"
+        after: "self.assertEqual(actual_total, expected_total)"
+
+  - id: T5
+    slug: one-behavior-per-test
+    category: tests
+    title: Keep each test about one behavior
+    instruction: >
+      A test asserting several unrelated things stops at the first failure and
+      hides the rest, and no name can describe everything it covers. Split it
+      so each test has one reason to fail and a name that states that reason.
+      Several short tests sharing a setup helper read better than one that
+      walks through an entire scenario.
+    chapter: 14
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          def test_cart():
+              cart = Cart()
+              cart.add(ITEM, qty=2)
+              assert cart.subtotal == 200
+              cart.apply_coupon("HALF")
+              assert cart.subtotal == 100
+              cart.remove(ITEM)
+              assert cart.is_empty
+        after: |
+          def test_subtotal_multiplies_price_by_quantity(): ...
+          def test_coupon_reduces_subtotal(): ...
+          def test_removing_last_item_empties_cart(): ...
+
+  - id: T6
+    slug: treat-untestable-code-as-a-design-signal
+    category: tests
+    title: Treat hard-to-test code as a design signal, without distorting the design to serve tests
+    instruction: >
+      Code needing elaborate setup to test usually has real problems — hidden
+      global state, too many responsibilities, dependencies it constructs
+      instead of receiving — and those are the same problems that make it hard
+      to read, so fix them. Stop short of the opposite failure: indirection,
+      injection points, and interfaces added only so a test can reach inside
+      are a readability cost paid by every reader for the benefit of the test
+      suite.
+    chapter: 14
+    severity: suggestion
+    lintable: false
+    exceptions: >
+      Where a project has an established testing architecture, follow it (`X2`)
+      rather than re-litigating its seams inside an unrelated change.
+
+  # --- X: Agent guardrails (original content; no book source) ---
+
+  - id: X1
+    slug: do-not-widen-the-diff
+    category: guardrails
+    title: Do not widen a diff to satisfy a readability rule
+    instruction: >
+      Change what the task asked you to change. When you notice other code in
+      the file that a catalog rule would improve, leave it alone and note it
+      in one line of your summary instead. A change that touches thirty lines
+      to fix three is harder to review, harder to revert, and buries the part
+      that mattered.
+    rationale: >
+      An agent holding a catalog of readability rules has a standing incentive
+      to apply all of them everywhere it looks. Unrequested cleanup is the
+      most common way a helpful change becomes an unmergeable one.
+    chapter: 0
+    severity: error
+    lintable: false
+
+  - id: X2
+    slug: match-existing-file-conventions
+    category: guardrails
+    title: Match the file's existing vocabulary and conventions over this catalog's preference
+    instruction: >
+      Where the surrounding code has already settled a question this catalog
+      has an opinion about — a naming shape, an error-handling idiom, a test
+      layout — follow what is there. A file that is internally consistent is
+      easier to read than one where your additions are individually more
+      correct. Raise the difference as a suggestion if it matters; do not
+      settle it unilaterally inside a change about something else.
+    chapter: 0
+    severity: warning
+    lintable: false
+
+  - id: X3
+    slug: never-rename-public-symbols-unasked
+    category: guardrails
+    title: Never rename a public or exported symbol unless asked
+    instruction: >
+      A rename crossing a module or package boundary is a breaking change for
+      callers you cannot see, including callers outside the repository. Even
+      when the existing name plainly violates a naming rule, propose the
+      rename and let a human decide. Names private to the module are fair game
+      within the scope of the task.
+    chapter: 0
+    severity: error
+    lintable: false
+
+  - id: X4
+    slug: separate-readability-and-behavior-changes
+    category: guardrails
+    title: Keep readability changes and behavior changes in separate steps
+    instruction: >
+      Do not fix a bug and restructure the code around it in one edit or one
+      commit. A reviewer reading a diff that does both cannot tell which lines
+      changed the behavior, and a revert takes back more than intended. Make
+      the behavior change and verify it, then clean up separately, or the
+      other way around, but never at once.
+    chapter: 0
+    severity: error
+    lintable: false
+
+  - id: X5
+    slug: defer-to-the-projects-formatter
+    category: guardrails
+    title: Leave whitespace, line length, and casing to the project's formatter and linter
+    instruction: >
+      If the project runs a formatter or a linter, its configuration is the
+      answer to every question about spacing, wrapping, quote style, and
+      import order, including where this catalog's aesthetics rules would say
+      otherwise. Run the tool and accept its output; do not hand-format
+      against it, and do not edit its configuration as part of an unrelated
+      change.
+    chapter: 0
+    severity: warning
+    lintable: false
+
+  - id: X6
+    slug: cite-only-real-rule-ids
+    category: guardrails
+    title: Cite only rule IDs that exist in this catalog, and report anything else as plain prose
+    instruction: >
+      Every finding must name an ID that appears in this catalog. When an
+      observation is worth reporting but no rule covers it, say it in plain
+      words with no ID rather than inventing one that looks plausible. A
+      fabricated ID is worse than none: it survives into review threads and
+      issue trackers where nobody can look it up.
+    rationale: >
+      Models reliably invent well-formed identifiers for numbered schemes they
+      have been shown. The failure is confident and hard to spot precisely
+      because the invented ID matches the real format.
+    chapter: 0
+    severity: error
+    lintable: false
+
+  - id: X7
+    slug: do-not-narrate-your-plan-in-comments
+    category: guardrails
+    title: Do not narrate your own plan or process in code comments
+    instruction: >
+      Comments describing the steps you are taking — numbered plan entries,
+      "first this, then that", notes addressed to whoever requested the change
+      — document your process rather than the code, and mean nothing to the
+      next reader. Put that narration in your reply and leave the file with
+      only the comments a maintainer would want.
+    chapter: 0
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          # Step 1: Get the user's records
+          records = fetch_records(user_id)
+          # Step 2: Now we filter out the archived ones
+          active = [r for r in records if not r.archived]
+        after: |
+          records = fetch_records(user_id)
+          active = [r for r in records if not r.archived]
+
+  - id: X8
+    slug: no-banners-dividers-or-emoji
+    category: guardrails
+    title: Do not add banner comments, section dividers, or emoji to code
+    instruction: >
+      Rows of repeated punctuation, boxed file headers, and emoji in comments,
+      log lines, or user-facing strings carry visual weight and no
+      information, and almost no codebase adopts them on its own. A file long
+      enough to feel like it needs internal signposting is a file that wants
+      splitting, not decorating.
+    chapter: 0
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          # ============================================================
+          # HELPER FUNCTIONS
+          # ============================================================
+          def normalize(text): ...
+        after: "def normalize(text): ..."
+    exceptions: >
+      A short plain label naming a genuine group of members, as in `A5`, is not
+      a banner. The target here is decoration: rules of repeated characters,
+      boxed headers, and emoji. Where a project already uses a section-marker
+      convention of its own, follow it (`X2`).
+
+# The catalog's own tiebreakers, in order. These resolve conflicts between the
+# rules above; `P1` is the principle the last of them appeals to.
+precedence:
+  - Correctness beats readability. A clearer version that changes behavior is not an improvement.
+  - Project convention beats catalog preference.
+  - Reader comprehension time beats brevity, cleverness, and rule-count compliance.
+  - The project's formatter and linter configuration wins every whitespace argument.
+  - When two catalog rules conflict, prefer the one that reduces time-to-understand for a reader unfamiliar with the code.

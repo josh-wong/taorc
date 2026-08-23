@@ -121,20 +121,20 @@ Note: `skills/readable-code/` sits at a path `npx skills` discovers natively (`s
 # catalog/rules.yaml
 version: 1
 rules:
-  - id: N7
-    slug: encode-units-in-names
+  - id: N3
+    slug: encode-units-and-formats-in-names
     category: names
-    title: Put the unit in the name when the value has one
+    title: Put units, formats, or encodings in the name when the value could be misread
     instruction: >
       When a number carries a unit, put the unit in the identifier.
       Bare `delay`, `size`, and `limit` force the reader to hunt for the unit.
     rationale: >
-      The reader's alternative is to trace the value to its source. That is the
-      exact cost the Fundamental Theorem tells you to minimize.
+      The reader's alternative is to trace the value back to its source, which
+      is the cost `P1` exists to minimize.
     chapter: 2
-    severity: suggestion     # error | warning | suggestion
+    severity: warning        # error | warning | suggestion
     lintable: true
-    lint_rule: taorc-n7-unit-free-name
+    lint_rule: taorc-n3-unit-free-name
     applies_to: [all]
     examples:
       - lang: typescript
@@ -143,9 +143,14 @@ rules:
     exceptions: >
       Skip when the project has a pervasive typed unit (a `Duration` type,
       `chrono::Duration`, `datetime.timedelta`) – the type already says it.
+
+precedence:
+  - Correctness beats readability. ...
 ```
 
-Required: `id`, `slug`, `category`, `title`, `instruction`, `chapter`, `severity`, `lintable`.
+Required: `id`, `slug`, `category`, `title`, `instruction`, `chapter`, `severity`, `lintable`. The top-level `precedence` list is also required; see §3.2.1.
+
+The entry above shows `lintable: true` to illustrate the field. In the shipped catalog every rule is `lintable: false` until MS4 adds the matching `scripts/rules/*/` file, because CI checks that pairing in both directions.
 
 - `chapter: 0` marks original content (the `X` category), which has no book source.
 - `severity` ranks findings in review mode and sets the linter's level for lintable rules. CI asserts the two never disagree: a lint rule's `severity` must equal its catalog entry's.
@@ -154,19 +159,25 @@ Required: `id`, `slug`, `category`, `title`, `instruction`, `chapter`, `severity
 
 ### 3.2 Categories and budget
 
-| Prefix | Category | Chapters | Rules | Reference file |
-|---|---|---|---|---|
-| `P` | Principles | 1 | 3 | in `SKILL.md` |
-| `N` | Names | 2, 3 | 12 | `naming.md` |
-| `A` | Aesthetics | 4 | 5 | `naming.md` |
-| `C` | Comments | 5, 6 | 14 | `comments.md` |
-| `F` | Control flow | 7 | 7 | `control-flow.md` |
-| `E` | Expressions | 8 | 5 | `control-flow.md` |
-| `V` | Variables | 9 | 5 | `control-flow.md` |
-| `S` | Structure | 10–13 | 8 | `structure.md` |
-| `T` | Tests | 14 | 6 | `tests.md` |
-| `X` | Agent guardrails | – | 8 | in `SKILL.md` |
-| | | | **73** | |
+| Prefix | Category | Chapters | Est. | Shipped | Reference file |
+|---|---|---|---|---|---|
+| `P` | Principles | 1 | 3 | 3 | in `SKILL.md` |
+| `N` | Names | 2, 3 | 12 | 16 | `naming.md` |
+| `A` | Aesthetics | 4 | 5 | 7 | `naming.md` |
+| `C` | Comments | 5, 6 | 14 | 18 | `comments.md` |
+| `F` | Control flow | 7 | 7 | 7 | `control-flow.md` |
+| `E` | Expressions | 8 | 5 | 5 | `control-flow.md` |
+| `V` | Variables | 9 | 5 | 5 | `control-flow.md` |
+| `S` | Structure | 10–13 | 8 | 8 | `structure.md` |
+| `T` | Tests | 14 | 6 | 6 | `tests.md` |
+| `X` | Agent guardrails | – | 8 | 8 | in `SKILL.md` |
+| | | | **73** | **83** | |
+
+The **Est.** column is the pre-drafting estimate this document and PRD R1.1 were sized against; **Shipped** is the catalog as built. All of the overrun is in chapters 2–6, which turned out to hold more separable rules than estimated; chapters 7–14 came in exactly on estimate, as §11 predicted they would. The 65–75 target in PRD R1.1 is superseded by this table.
+
+### 3.2.1 Precedence
+
+`catalog/rules.yaml` carries a top-level `precedence` list (PRD R1.3) alongside `rules`. It is ordered — earlier entries win — and it is the tiebreaker set `SKILL.md` §4 renders for the agent. It lives in the catalog rather than only in prose so that a conflict between two rules resolves against a validated source rather than a paraphrase in whichever adapter the agent happens to have loaded.
 
 ### 3.3 ID stability
 
@@ -310,26 +321,28 @@ The single most differentiating file in the repo, and entirely original work. St
 
 | Tell | Rule | Lint | Fix |
 |---|---|---|---|
-| Comment restates the next line | C1 | ✓ | Delete |
-| `// Step 1:` / `// First, we...` plan narration | C2 | ✓ | Delete |
-| `# ===== HELPERS =====` banner | C3 | ✓ | Delete; if the file needs sections, it needs splitting |
-| Emoji in comments, log lines, or output | C4 | ✓ | Delete |
-| Docstring restates the signature, adds nothing | C5 | | Delete or replace with why/constraints |
-| `# In a real implementation, you would...` | C6 | ✓ | Delete or convert to a real `TODO(owner):` |
-| Commented-out code left behind | C8 | ✓ | Delete; git remembers |
-| `data`, `result`, `output`, `info`, `item` | N1 | ✓ | Name the thing |
-| `handler`, `processor`, `manager`, `helper` | N2 | | Name the action |
-| `utils.py` / `helpers.ts` accumulating unrelated functions | S2 | | Name the domain concept |
-| Bare `timeout`, `size`, `limit` | N7 | ✓ | Add the unit or bound |
-| Single-use helper abstracted "for reusability" | S6 | | Inline it |
-| Try/except wrapped around code that cannot throw | S7 | | Delete |
-| Reimplemented `groupby` / `Counter` / `zip` | S8 | | Use the library |
-| Intermediate variable that exists only to be returned | V1 | | Return directly |
-| `if x == True:` / `if len(x) > 0:` | E4 | | `if x:` |
-| Test named `test_1`, `test_basic`, `test_works` | T3 | ✓ | Name the scenario and expectation |
-| Hedging comment: "This should probably..." | C9 | | Decide, or file a real TODO |
+| Comment restates the next line | `C1` | ✓ | Delete |
+| `// Step 1:` / `// First, we...` plan narration | `X7` | ✓ | Delete |
+| `# ===== HELPERS =====` banner | `X8` | ✓ | Delete; if the file needs sections, it needs splitting |
+| Emoji in comments, log lines, or output | `X8` | ✓ | Delete |
+| Docstring restates the signature, adds nothing | `C14` | | Delete or replace with why/constraints |
+| `# In a real implementation, you would...` | `C4` | ✓ | Delete or convert to a real `TODO(owner):` |
+| Commented-out code left behind | `S7` | ✓ | Delete; git remembers |
+| `data`, `result`, `output`, `info`, `item` | `N1` | ✓ | Name the thing |
+| `handler`, `processor`, `manager`, `helper` | `N9` | | Name the action |
+| `utils.py` / `helpers.ts` accumulating unrelated functions | `S2` | | Name the domain concept |
+| Bare `timeout`, `size`, `limit` | `N3` | ✓ | Add the unit or bound |
+| Single-use helper abstracted "for reusability" | `S6` | | Inline it |
+| Try/except wrapped around code that cannot throw | `S7` | | Delete |
+| Reimplemented `groupby` / `Counter` / `zip` | `S8` | | Use the library |
+| Intermediate variable that exists only to be returned | `V1` | | Return directly |
+| `if x == True:` / `if len(x) > 0:` | `E4` | | `if x:` |
+| Test named `test_1`, `test_basic`, `test_works` | `T3` | ✓ | Name the scenario and expectation |
+| Hedging comment: "This should probably..." | `C13` | | Decide, or file a real TODO |
 
-The **Lint** column marks the nine `taorc-lint` catches; the rest need the agent's judgment.
+The **Lint** column marks the nine `taorc-lint` catches (the banner and emoji rows share one rule, `X8`); the rest need the agent's judgment.
+
+Note that four of the most recognizable tells — plan narration, banners, emoji, and unrequested cleanup — land on `X` rules rather than book-derived ones. The book had no reason to warn against habits that only a generative model has.
 
 ## 6. Distribution
 
@@ -457,7 +470,7 @@ So the release gate is **four manual smoke tests, one per delivery path plus the
 One format, used by review mode, refactor mode's change report, and `taorc-lint`. Shared format means the agent's fix-loop reads its own output and the linter's output identically.
 
 ```text
-[N7] src/api/client.ts:42  Name has no unit
+[N3] src/api/client.ts:42  Name has no unit
   const timeout = 30;
   → rename to `timeoutSecs` (or `timeoutMs` if milliseconds)
 ```
@@ -496,18 +509,19 @@ All are high-precision by construction—each fires on a syntactic signature tha
 
 | ID | Rule | Detection | Sev |
 |---|---|---|---|
-| C1 | Comment echoes the code below it | See §8.2.1 | warning |
-| C2 | Plan narration comment | Comment matches `^\W*(step \d|first,|next,|then,|finally,|now (we\|let's))` | warning |
-| C3 | Banner comment | Comment matches `[=\-*_#]{5,}` | warning |
-| C4 | Emoji in comment or string literal | Unicode emoji ranges | warning |
-| C6 | Placeholder comment | `in a real implementation\|for now\|simplified (version\|example)\|in production` | warning |
-| C8 | Commented-out code | Comment body matches statement-shaped source for the language | warning |
-| N1 | Empty-word identifier | Declaration name in `{data,result,output,temp,tmp,val,value,item,obj,info,helper,handler,manager,processor,util,utils}`, **excluding** loop variables, comprehension targets, and functions under 5 lines | suggestion |
-| N7 | Unit-free time or size name | Name matches `(delay\|timeout\|elapsed\|duration\|interval\|expiry\|ttl\|size\|length\|limit)$` with no unit suffix and a numeric literal initializer | suggestion |
-| N9 | Negated boolean name | Name matches `^(is\|has\|can)?_?(not\|no\|non\|dont\|cant\|disable)` on a boolean-valued declaration | suggestion |
-| T3 | Uninformative test name | Test function name matches `^test_?(\d+\|it\|works\|basic\|main\|case\d*)?$` | suggestion |
+| `C1` | Comment echoes the code below it | See §8.2.1 | warning |
+| `C4` | Placeholder comment | `in a real implementation\|for now\|simplified (version\|example)\|in production` | suggestion |
+| `N1` | Empty-word identifier | Declaration name in `{data,result,output,temp,tmp,val,value,item,obj,info,helper,handler,manager,processor,util,utils}`, **excluding** loop variables, comprehension targets, and functions under 5 lines | warning |
+| `N3` | Unit-free time or size name | Name matches `(delay\|timeout\|elapsed\|duration\|interval\|expiry\|ttl\|size\|length\|limit)$` with no unit suffix and a numeric literal initializer | warning |
+| `N11` | Negated boolean name | Name matches `^(is\|has\|can)?_?(not\|no\|non\|dont\|cant\|disable)` on a boolean-valued declaration | suggestion |
+| `S7` | Commented-out code | Comment body matches statement-shaped source for the language | warning |
+| `T3` | Uninformative test name | Test function name matches `^test_?(\d+\|it\|works\|basic\|main\|case\d*)?$` | warning |
+| `X7` | Plan narration comment | Comment matches `^\W*(step \d|first,|next,|then,|finally,|now (we\|let's))` | warning |
+| `X8` | Banner comment or emoji | Comment matches `[=\-*_#]{5,}`, or a comment or string literal contains a Unicode emoji | warning |
 
-Severities are deliberately conservative: four `suggestion`, six `warning`, **zero `error`**. Nothing in v1 fails a build by default. A linter that blocks CI on a naming opinion gets uninstalled.
+Severities are deliberately conservative: two `suggestion`, seven `warning`, **zero `error`**. Nothing in v1 fails a build by default. A linter that blocks CI on a naming opinion gets uninstalled.
+
+Each `Sev` above is the severity of that rule's catalog entry, not an independent choice — §3.1 requires the two to agree and CI asserts it. `X8` covers banners and emoji under one ID because they share a rationale and a fix; the ast-grep rule matches either pattern.
 
 #### 8.2.1 C1 in detail
 
@@ -546,18 +560,18 @@ Both the 80% threshold and the two word lists are starting values, tuned against
 ### 8.3 Rule file shape
 
 ```yaml
-# skills/readable-code/scripts/rules/typescript/c3-banner-comment.yml
-id: taorc-c3-banner-comment
+# skills/readable-code/scripts/rules/typescript/x8-banner-comment.yml
+id: taorc-x8-banner-comment
 language: TypeScript
 severity: warning
-message: "[C3] Banner comment"
+message: "[X8] Banner comment"
 note: "→ delete it; a file that needs section dividers needs splitting"
 rule:
   kind: comment
   regex: '[=\-*_#]{5,}'
 ```
 
-`ast-grep`'s `id` carries the descriptive slug; `message` carries the citable `[C3]`. The scan output is parsed on `[ID]` prefix.
+`ast-grep`'s `id` carries the descriptive slug; `message` carries the citable `[X8]`. The scan output is parsed on `[ID]` prefix.
 
 ### 8.4 Fixtures
 
@@ -723,7 +737,7 @@ Given Q3 (the book is available), the catalog is authored against the source rat
 |---|---|---|
 | **MS0** | Repo skeleton, `catalog/schema.json`, `build.py`, `validate.py`, CI green on an empty catalog | Generation and validation work before content exists |
 | **MS1** | Catalog drafted, chapters 1–6 (P, N, A, C – 44 rules; original estimate of 34 was revised upward during drafting), verified per §11 | Josh's verification pass |
-| **MS2** | Catalog complete, `chapter-map.md` (the "all 73" total below needs to be reassessed against MS1's actual 44, since it was sized against the original 34-rule estimate for chapters 1–6) | Referential integrity green |
+| **MS2** | Catalog complete (83 rules), `chapter-map.md`, `precedence` in the catalog | Referential integrity green |
 | **MS3** | `SKILL.md` + all 9 reference files | Token budget green; manual read-through |
 | **MS4** | `taorc-lint` + fixtures + configs | M5 false-positive target met |
 | **MS5** | Adapters + installers + manifests | Installer + placement-matrix tests green on 3 OSes; 4-harness manual pass recorded in `docs/harness-verification.md` |
