@@ -346,6 +346,18 @@ rules:
     chapter: 4
     severity: suggestion
     lintable: false
+    examples:
+      - lang: python
+        before: |
+          web = Server("web", 8080,
+              True)
+          api = Server("api",
+              8081, False)
+          admin = Server("admin", 8082, True)
+        after: |
+          web = Server("web", 8080, True)
+          api = Server("api", 8081, False)
+          admin = Server("admin", 8082, True)
 
   - id: A2
     slug: use-helpers-to-clean-repeated-irregularity
@@ -359,6 +371,16 @@ rules:
     chapter: 4
     severity: suggestion
     lintable: false
+    examples:
+      - lang: java
+        before: |
+          assertEquals(200, response.getStatusCode());
+          assertEquals("application/json", response.getHeader("Content-Type"), "wrong content type: " + response.getBody());
+          assertTrue(response.getBody().contains("\"id\""), "response missing id field, got: " + response.getBody());
+        after: |
+          assertStatus(response, 200);
+          assertHeader(response, "Content-Type", "application/json");
+          assertBodyContains(response, "\"id\"");
 
   - id: A3
     slug: align-similar-lines-into-columns
@@ -373,6 +395,16 @@ rules:
     chapter: 4
     severity: suggestion
     lintable: false
+    examples:
+      - lang: go
+        before: |
+          name := "retries"
+          timeoutSeconds := 30
+          maxConnections := 100
+        after: |
+          name           := "retries"
+          timeoutSeconds := 30
+          maxConnections := 100
 
   - id: A4
     slug: order-code-by-meaning
@@ -386,6 +418,10 @@ rules:
     chapter: 4
     severity: suggestion
     lintable: false
+    examples:
+      - lang: javascript
+        before: "function validateAddress(zip, state, city, street) { ... }"
+        after: "function validateAddress(street, city, state, zip) { ... }"
 
   - id: A5
     slug: organize-declarations-into-logical-blocks
@@ -398,6 +434,33 @@ rules:
     chapter: 4
     severity: suggestion
     lintable: false
+    examples:
+      - lang: python
+        before: |
+          class Report:
+              def __init__(self): ...
+              def total_revenue(self): ...
+              def _cache_key(self): ...
+              def add_line_item(self): ...
+              def _validate(self): ...
+              def render_pdf(self): ...
+        after: |
+          class Report:
+              # Construction
+              def __init__(self): ...
+
+              # Mutators
+              def add_line_item(self): ...
+
+              # Queries
+              def total_revenue(self): ...
+
+              # Output
+              def render_pdf(self): ...
+
+              # Internal helpers
+              def _cache_key(self): ...
+              def _validate(self): ...
 
   - id: A6
     slug: break-large-blocks-into-paragraphs
@@ -412,6 +475,30 @@ rules:
     chapter: 4
     severity: suggestion
     lintable: false
+    examples:
+      - lang: ruby
+        before: |
+          def checkout(cart)
+            cart.items.each { |i| i.reserve_stock }
+            total = cart.items.sum(&:price)
+            total += shipping_cost(cart)
+            charge = payment_gateway.charge(total)
+            order = Order.create(cart: cart, charge: charge)
+            cart.items.each { |i| i.confirm_reservation }
+            order
+          end
+        after: |
+          def checkout(cart)
+            cart.items.each { |i| i.reserve_stock }
+
+            total = cart.items.sum(&:price)
+            total += shipping_cost(cart)
+            charge = payment_gateway.charge(total)
+
+            order = Order.create(cart: cart, charge: charge)
+            cart.items.each { |i| i.confirm_reservation }
+            order
+          end
 
   - id: A7
     slug: prefer-consistency-over-personal-style
@@ -426,6 +513,25 @@ rules:
     chapter: 4
     severity: suggestion
     lintable: false
+    examples:
+      - lang: java
+        before: |
+          public void start() {
+              running = true;
+          }
+
+          public void stop()
+          {
+              running = false;
+          }
+        after: |
+          public void start() {
+              running = true;
+          }
+
+          public void stop() {
+              running = false;
+          }
 
   # --- C: Comments (chapter 5: knowing what to comment) ---
 
@@ -494,6 +600,16 @@ rules:
     chapter: 5
     severity: suggestion
     lintable: false
+    examples:
+      - lang: python
+        before: |
+          def parse_timestamp(raw):
+              return raw  # TODO
+        after: |
+          def parse_timestamp(raw):
+              # TODO(#482): raw is a Unix epoch today; switch to ISO 8601 once
+              # the ingest service migrates, then drop this passthrough.
+              return raw
 
   - id: C5
     slug: explain-constants
