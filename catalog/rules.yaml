@@ -1,2 +1,711 @@
 version: 1
-rules: []
+rules:
+  # --- P: Principles (chapter 1) ---
+
+  - id: P1
+    slug: minimize-time-to-understand
+    category: principles
+    title: Minimize the time it would take someone else to understand the code
+    instruction: >
+      Treat "how long would it take an unfamiliar reader to understand this
+      and confirm it's correct" as the metric a coding decision should
+      optimize. When this catalog's other rules conflict with each other in
+      a specific case, the one that most reduces time-to-understand wins.
+    rationale: >
+      This is the single theme every other rule in this catalog exists to
+      serve; a rule that helps in general but hurts time-to-understanding in
+      a specific case should lose that case.
+    chapter: 1
+    severity: warning
+    lintable: false
+
+  - id: P2
+    slug: smaller-isnt-automatically-more-readable
+    category: principles
+    title: Fewer lines is usually good, but it is not the same goal as readability
+    instruction: >
+      Do not chase a lower line count once it starts costing understanding
+      time. A dense one-line expression can take longer to verify than a
+      plainer version spread across two or three lines, and a line that
+      "adds code" (such as a well-placed comment) can still be a net win if
+      it makes the surrounding code faster to understand.
+    chapter: 1
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: python
+        before: "return (cfg := load_config(path)) and cfg.enabled and cfg.timeout or DEFAULT_TIMEOUT"
+        after: |
+          cfg = load_config(path)
+          if cfg is None or not cfg.enabled:
+              return DEFAULT_TIMEOUT
+          return cfg.timeout
+
+  - id: P3
+    slug: readability-rarely-conflicts-with-other-goals
+    category: principles
+    title: Treat an apparent conflict between readability and other goals as a signal to look harder
+    instruction: >
+      Efficiency, good architecture, and testability rarely conflict with
+      writing code that is easy to understand — pursuing readability
+      typically produces a design that is also cleanly factored and simple
+      to verify with a test. When a real conflict does appear, spend the
+      extra effort to
+      imagine how an unfamiliar reader would see the code, and let
+      minimizing their understanding time break the tie.
+    chapter: 1
+    severity: suggestion
+    lintable: false
+
+  # --- N: Names (chapter 2: packing information into names) ---
+
+  - id: N1
+    slug: specific-over-vague-words
+    category: names
+    title: Prefer a specific word over a vague one when a precise word exists
+    instruction: >
+      Replace generic verbs and nouns (get, do, thing, data, handle) with a
+      word that tells the reader what actually happens or what is stored,
+      whenever a more specific word is available and not misleading.
+    chapter: 2
+    severity: warning
+    lintable: false
+    examples:
+      - lang: go
+        before: "func (c *Cache) Get(key string) (string, error)"
+        after: "func (c *Cache) FetchOrLoad(key string) (string, error)"
+
+  - id: N2
+    slug: reserve-placeholder-names-for-short-lifetimes
+    category: names
+    title: Reserve placeholder names like tmp and retval for genuinely short-lived values
+    instruction: >
+      Use tmp, retval, or a bare loop index only when the variable's entire
+      lifetime is a couple of lines and nothing about it matters beyond that
+      brief, temporary existence (a swap slot, a running accumulator). In a
+      nested loop, prefer index names that echo the collection they index
+      (matching first letters) over plain i, j, k, so a mismatched index
+      stands out as a bug rather than reading as fine.
+    chapter: 2
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: java
+        before: |
+          for (int i = 0; i < rows.size(); i++)
+              for (int j = 0; j < cols.size(); j++)
+                  if (grid[i][j] == target)
+                      matches.add(rows[j]);   // bug: should be rows[i]
+        after: |
+          for (int ri = 0; ri < rows.size(); ri++)
+              for (int ci = 0; ci < cols.size(); ci++)
+                  if (grid[ri][ci] == target)
+                      matches.add(rows[ci]);   // mismatch is now obvious
+
+  - id: N3
+    slug: encode-units-and-formats-in-names
+    category: names
+    title: Put units, formats, or encodings in the name when the value could be misread
+    instruction: >
+      When a value carries a unit (seconds, bytes, degrees) or an encoding
+      (UTC, base64, escaped HTML) that a caller could get wrong, put it in
+      the identifier rather than leaving it to a type comment the reader may
+      not see at the call site.
+    chapter: 2
+    severity: warning
+    lintable: false
+    examples:
+      - lang: go
+        before: "pollInterval := 5"
+        after: "pollIntervalMs := 5"
+
+  - id: N4
+    slug: flag-unsafe-state-in-name
+    category: names
+    title: Mark values that are dangerous or need special handling in the name
+    instruction: >
+      If leaving a value in its default form is risky (an unescaped string,
+      a plaintext secret, unvalidated input), prefix or suffix the name so
+      the risk travels with every reference to it, instead of living only in
+      a comment at the point of creation.
+    chapter: 2
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: "path = request.args[\"path\"]"
+        after: "unsanitized_path = request.args[\"path\"]"
+
+  - id: N5
+    slug: scale-name-length-to-scope
+    category: names
+    title: Scale name length to the size of the scope the name lives in
+    instruction: >
+      A name visible across many files earns a longer, descriptive name; a
+      value used for a couple of lines can stay short because a reader can
+      see its whole life at a glance. Do not give a five-word name to a
+      value that dies at the end of the next line, and do not give a single
+      letter to a value threaded through half a module or held as a class
+      member.
+    chapter: 2
+    severity: suggestion
+    lintable: false
+
+  - id: N6
+    slug: avoid-obscure-project-abbreviations
+    category: names
+    title: Avoid an abbreviation a new teammate would not recognize
+    instruction: >
+      Before shortening a name, ask whether a new teammate would understand
+      it without being told. Widely understood shortenings (eval, doc, str)
+      are fine; a project-invented abbreviation usually is not, and typing
+      the full name back out costs nothing once editor autocomplete is in
+      play.
+    chapter: 2
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: java
+        before: "class UsrSvc { ... }"
+        after: "class UserService { ... }"
+
+  - id: N7
+    slug: use-consistent-name-formatting
+    category: names
+    title: Use the codebase's naming format consistently to convey meaning
+    instruction: >
+      Follow the project's established conventions for capitalization,
+      separators, and related name forms (a trailing underscore for members,
+      a distinct case for constants versus macros, a marker prefix for a
+      specific kind of object). Consistent formatting gives readers a visual
+      shortcut for an identifier's role, the way syntax highlighting does,
+      without their needing to open its declaration.
+    chapter: 2
+    severity: suggestion
+    lintable: false
+
+  - id: N8
+    slug: remove-unneeded-words-from-names
+    category: names
+    title: Remove words that add no information, but keep the meaning precise
+    instruction: >
+      Make names as short as they can be without losing useful information.
+      Drop a word that repeats something already implied by the type or
+      context, and keep a longer name when the extra word prevents ambiguity
+      or describes a wider scope.
+    chapter: 2
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: python
+        before: "def perform_cleanup(self): ..."
+        after: "def cleanup(self): ..."
+
+  - id: N9
+    slug: prefer-concrete-over-abstract-names
+    category: names
+    title: Prefer a concrete name that describes what an entity actually does
+    instruction: >
+      Replace an abstract name with a concrete one that tells the reader
+      what the code specifically checks, builds, or affects. If one name is
+      being asked to carry two unrelated purposes, split it into two
+      specific names instead of stretching a vague one to cover both.
+    chapter: 2
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: go
+        before: "func (q *Queue) IsReady() bool { ... }"
+        after: "func (q *Queue) HasPendingWrites() bool { ... }"
+
+  # --- N: Names (chapter 3: names that can't be misconstrued) ---
+
+  - id: N10
+    slug: booleans-read-as-yes-no-questions
+    category: names
+    title: Name booleans so they read as a yes-or-no question
+    instruction: >
+      Prefix boolean variables and boolean-returning functions with is, has,
+      can, or should (or an equivalent), so a reader can tell at the call
+      site whether true means proceed or stop without opening the
+      definition.
+    chapter: 3
+    severity: warning
+    lintable: false
+    examples:
+      - lang: java
+        before: "boolean paginate;"
+        after: "boolean shouldPaginate;"
+
+  - id: N11
+    slug: avoid-negated-boolean-names
+    category: names
+    title: Avoid negation in boolean names
+    instruction: >
+      Name booleans so they read positively (enabled, not disabled). A
+      double negative, such as !isNotReady, forces the reader to mentally
+      cancel two negatives at every call site.
+    chapter: 3
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: csharp
+        before: "bool skipCache = false;"
+        after: "bool useCache = true;"
+
+  - id: N12
+    slug: first-last-vs-begin-end-for-ranges
+    category: names
+    title: Use first and last for an inclusive range, begin and end for a half-open one
+    instruction: >
+      When naming a pair of bounds, use first and last for a range that
+      includes both ends, and begin/end for a range that excludes the
+      endpoint (there is no ordinary word for the position immediately after
+      the final element, so begin/end is the idiomatic stand-in). Do not mix
+      the two conventions
+      for the same kind of range within one codebase.
+    chapter: 3
+    severity: warning
+    lintable: false
+
+  - id: N13
+    slug: max-min-prefix-for-hard-limits
+    category: names
+    title: Prefix a hard limit with max or min rather than a bare noun
+    instruction: >
+      A variable that caps a quantity (attempts, size, retries) reads
+      unambiguously as an inclusive limit when named maxAttempts or minSize;
+      a bare attempts or size leaves the reader guessing whether it is the
+      limit or the current count.
+    chapter: 3
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: python
+        before: "UPLOAD_LIMIT = 25"
+        after: "MAX_UPLOAD_MB = 25"
+
+  - id: N14
+    slug: resolve-ambiguous-overloaded-words
+    category: names
+    title: Avoid a name whose common meaning could be read two different ways
+    instruction: >
+      Some ordinary words split cleanly into two plausible readings once
+      they're attached to code — a name that could mean either "keep this"
+      or "discard this," or either "shrink to this size" or "cut off this
+      much." Before using such a word, pick a name that resolves the
+      ambiguity outright rather than hoping context will.
+    chapter: 3
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: "def clean(records): ...  # discards bad records, or repairs them in place?"
+        after: "def discard_invalid(records): ..."
+
+  - id: N15
+    slug: match-users-expectations
+    category: names
+    title: Match users' expectations for conventional method names
+    instruction: >
+      Respect established conventions when a name carries an expected
+      meaning to callers. Do not give an expensive, on-the-fly computation a
+      name that convention marks as a cheap, constant-time accessor (a
+      get-style name, or a container's size-style method); rename it to
+      signal the real cost, or make the implementation live up to the name.
+    chapter: 3
+    severity: warning
+    lintable: false
+
+  - id: N16
+    slug: scrutinize-names-for-wrong-interpretations
+    category: names
+    title: Actively look for ways a name could be misunderstood
+    instruction: >
+      Before settling on a name, deliberately try to misread it: pretend you
+      know nothing of your intent and list every plausible meaning a
+      stranger could pin on it. When more than one candidate name is on the
+      table, run each one through this test and keep whichever survives it
+      best.
+    chapter: 3
+    severity: warning
+    lintable: false
+
+  # --- A: Aesthetics and layout (chapter 4) ---
+
+  - id: A1
+    slug: give-similar-code-the-same-shape
+    category: aesthetics
+    title: Give structurally similar code the same visual shape, then make it compact
+    instruction: >
+      When several blocks do a structurally similar job (parallel
+      constructor calls, a series of field assignments), rearrange line
+      breaks so their outline matches from one block to the next, then look
+      for a more compact layout that keeps that consistency instead of
+      leaving it needlessly spread out.
+    chapter: 4
+    severity: suggestion
+    lintable: false
+
+  - id: A2
+    slug: use-helpers-to-clean-repeated-irregularity
+    category: aesthetics
+    title: Use a helper method when repeated detail prevents a consistent layout
+    instruction: >
+      If rearranging line breaks cannot make repeated code compact and
+      regular because the repeated parts differ in visual length, extract
+      the repeated setup or assertion into a helper so the important,
+      varying values sit next to each other in plain sight.
+    chapter: 4
+    severity: suggestion
+    lintable: false
+
+  - id: A3
+    slug: align-similar-lines-into-columns
+    category: aesthetics
+    title: Align repeated similar lines into columns when it improves skimming
+    instruction: >
+      For a block of near-identical lines (a table of constants, parallel
+      assignments), align corresponding parts into columns when that lets a
+      reader's eye track straight down instead of re-parsing every line from
+      scratch. Drop the alignment if it becomes real upkeep work rather than
+      a one-time formatting pass.
+    chapter: 4
+    severity: suggestion
+    lintable: false
+
+  - id: A4
+    slug: order-code-by-meaning
+    category: aesthetics
+    title: Pick a meaningful order and use it consistently
+    instruction: >
+      When several declarations or related items have no order forced by
+      correctness, choose one that means something to the reader (matching
+      an external order, most-to-least important, or alphabetical) and keep
+      that same order everywhere the same items appear together.
+    chapter: 4
+    severity: suggestion
+    lintable: false
+
+  - id: A5
+    slug: organize-declarations-into-logical-blocks
+    category: aesthetics
+    title: Organize declarations into logical blocks
+    instruction: >
+      Group related declarations and methods together under meaningful
+      section labels so readers can digest a class or file as a hierarchy of
+      groups, instead of scanning one undifferentiated list.
+    chapter: 4
+    severity: suggestion
+    lintable: false
+
+  - id: A6
+    slug: break-large-blocks-into-paragraphs
+    category: aesthetics
+    title: Break large blocks into logical paragraphs
+    instruction: >
+      Use a blank line to separate a large block into logical steps, the way
+      written prose uses paragraph breaks: a visual marker that keeps a
+      reader oriented and shows where one idea ends and the next begins,
+      not decoration. Pair each paragraph with a short summary comment when
+      that helps a reader skim the sequence of steps.
+    chapter: 4
+    severity: suggestion
+    lintable: false
+
+  - id: A7
+    slug: prefer-consistency-over-personal-style
+    category: aesthetics
+    title: Prefer consistency over the personally preferred style
+    instruction: >
+      When multiple formatting styles are equally readable on their own
+      (brace placement, for instance), follow the style already used by the
+      project even if it is not the one you would have picked yourself. A
+      codebase that applies one convention everywhere is easier to read than
+      one where each file follows its author's individual taste.
+    chapter: 4
+    severity: suggestion
+    lintable: false
+
+  # --- C: Comments (chapter 5: knowing what to comment) ---
+
+  - id: C1
+    slug: dont-restate-the-code
+    category: comments
+    title: Do not write a comment that only restates what the code already says
+    instruction: >
+      If a comment is redundant with the identifier and syntax already in
+      front of the reader, delete it — including a comment written only to
+      satisfy a habit of "every function needs one." A comment earns its
+      line by adding something the code does not already express.
+    chapter: 5
+    severity: warning
+    lintable: false
+    examples:
+      - lang: java
+        before: |
+          // Getter for the count field
+          public int getCount() { return count; }
+        after: "public int getCount() { return count; }"
+
+  - id: C2
+    slug: fix-bad-names-instead-of-commenting-around-them
+    category: comments
+    title: Fix a bad name instead of writing a comment to compensate for it
+    instruction: >
+      When a comment exists mainly to explain what an unclear function or
+      variable name means, improve the name instead so the meaning travels
+      with every use. A comment should not have to compensate for a name
+      that could simply be better.
+    chapter: 5
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: |
+          # Stops watching the file. This does not delete the file on disk.
+          def unwatch(path): ...
+        after: "def stop_watching(path): ..."
+
+  - id: C3
+    slug: record-information-the-code-cannot-show
+    category: comments
+    title: Use comments to record insight the code by itself cannot convey
+    instruction: >
+      Write down the insight a future reader would otherwise have no way to
+      recover: why a surprising design won out over the obvious one, or an
+      honest note that a section is messy and how it should eventually be
+      cleaned up. Judge a comment by whether it helps the reader, not by
+      which category of information it falls into — a mechanical rule about
+      which category is allowed will exclude comments that would have
+      helped.
+    chapter: 5
+    severity: warning
+    lintable: false
+
+  - id: C4
+    slug: flag-known-flaws-with-markers
+    category: comments
+    title: Mark known shortcuts and unfinished work with a searchable marker
+    instruction: >
+      Use a consistent marker such as TODO, FIXME, HACK, or XXX, plus enough
+      context to act on it later, for code that is deliberately incomplete
+      or a known compromise, so the gap is discoverable instead of silent.
+    chapter: 5
+    severity: suggestion
+    lintable: false
+
+  - id: C5
+    slug: explain-constants
+    category: comments
+    title: Explain a constant's value when the number itself doesn't explain the choice
+    instruction: >
+      A magic-looking threshold, timeout, or limit needs one line on why
+      that value was chosen (a measured budget, an external limit, a safety
+      margin) unless the name alone already makes it obvious.
+    chapter: 5
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: go
+        before: "const maxRetries = 4"
+        after: |
+          // The upstream gateway rate-limits after 5 requests in 10s; 4 keeps
+          // one retry in reserve for a genuine transient failure.
+          const maxRetries = 4
+
+  - id: C6
+    slug: anticipate-reader-questions
+    category: comments
+    title: Comment where a careful reader would stop and ask why
+    instruction: >
+      Before finishing a piece of non-obvious code, reread it as a stranger
+      would, and add a comment at the exact line where a reader is likely to
+      pause and wonder why it wasn't done the more obvious way.
+    chapter: 5
+    severity: suggestion
+    lintable: false
+
+  - id: C7
+    slug: document-surprising-behavior
+    category: comments
+    title: Advertise a likely pitfall before a caller discovers it the hard way
+    instruction: >
+      If a function has a slow or blocking side effect, an unusual failure
+      mode, or a runtime cost that isn't apparent from its name, document
+      that surprising part explicitly at the definition, so a caller who
+      trusts the name at face value cannot get burned by it.
+    chapter: 5
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: "def resize_image(path, width): ..."
+        after: |
+          def resize_image(path, width):
+              """Downloads the source image from remote storage first if it isn't cached locally."""
+
+  - id: C8
+    slug: give-big-picture-context
+    category: comments
+    title: Give a complex file or class a short comment stating its overall purpose
+    instruction: >
+      For a piece of code whose role in the system isn't obvious from
+      skimming its parts, add a few sentences near the top stating what it
+      accomplishes and how it fits with its neighbors, so a new reader can
+      orient before reading the detail.
+    chapter: 5
+    severity: suggestion
+    lintable: false
+
+  - id: C9
+    slug: summarize-a-block-with-one-comment
+    category: comments
+    title: Summarize a multi-step block with a single comment instead of narrating each line
+    instruction: >
+      When a sequence of statements accomplishes one coherent step, put one
+      comment above the block describing that step, rather than a comment
+      above every line, so a skimming reader can get the gist before
+      deciding whether to read the details.
+    chapter: 5
+    severity: suggestion
+    lintable: false
+
+  - id: C10
+    slug: write-comments-early-and-refine-them
+    category: comments
+    title: Write a rough comment early, then make it precise
+    instruction: >
+      If you hesitate to comment because a good one feels like work, write
+      down the rough version of the thought first, exactly as it occurs to
+      you, then reread it and replace vague phrases with the specific thing
+      you meant. Commenting as you go avoids reconstructing all the useful
+      context later.
+    chapter: 5
+    severity: suggestion
+    lintable: false
+
+  # --- C: Comments (chapter 6: making comments precise and compact) ---
+
+  - id: C11
+    slug: keep-comments-compact-and-dense
+    category: comments
+    title: Keep comments compact and information-dense
+    instruction: >
+      If a comment is worth writing, make every word in it earn its place:
+      say in one line what would otherwise take three, without dropping any
+      of the information a reader needs.
+    chapter: 6
+    severity: suggestion
+    lintable: false
+
+  - id: C12
+    slug: avoid-ambiguous-pronouns
+    category: comments
+    title: Avoid a pronoun a reader would have to work to resolve
+    instruction: >
+      Replace this, it, or that in a comment with the specific noun it
+      refers to whenever more than one candidate is plausible from
+      context. Making the reader trace back through the code to resolve a
+      pronoun defeats the comment's purpose.
+    chapter: 6
+    severity: warning
+    lintable: false
+    examples:
+      - lang: python
+        before: "# Copy the file into the archive, but check if it's already compressed."
+        after: "# Copy the file into the archive, but check if the file is already compressed."
+
+  - id: C13
+    slug: polish-sloppy-comment-sentences
+    category: comments
+    title: Polish comments into direct, precise sentences
+    instruction: >
+      Replace a roundabout first draft with a shorter, more direct sentence
+      that states exactly what the code does. Making a comment more precise
+      and making it more compact are usually the same edit.
+    chapter: 6
+    severity: suggestion
+    lintable: false
+
+  - id: C14
+    slug: describe-function-behavior-precisely
+    category: comments
+    title: Describe a function's behavior precisely, including its corner cases
+    instruction: >
+      A comment that only restates a function's name in sentence form isn't
+      precise enough to answer the corner-case questions a caller will
+      actually have. Say exactly what the function returns for the edge
+      inputs a reasonable caller would wonder about (empty input, no
+      matches, a boundary value).
+    chapter: 6
+    severity: warning
+    lintable: false
+    examples:
+      - lang: rust
+        before: |
+          // Returns the number of words in this string.
+          fn word_count(s: &str) -> usize { ... }
+        after: |
+          // Counts whitespace-delimited tokens; runs of whitespace count once,
+          // and leading or trailing whitespace is ignored.
+          fn word_count(s: &str) -> usize { ... }
+
+  - id: C15
+    slug: illustrate-corner-cases-with-input-output-comments
+    category: comments
+    title: Use a carefully chosen input/output example to clarify corner cases
+    instruction: >
+      When a function's behavior is hard to describe compactly in prose,
+      include a worked example that demonstrates the important boundary,
+      duplicate, or otherwise surprising case and shows the resulting
+      output, rather than trying to enumerate every case in words.
+    chapter: 6
+    severity: suggestion
+    lintable: false
+
+  - id: C16
+    slug: state-intent-for-tricky-code
+    category: comments
+    title: State the intent behind the code, not just an account of its mechanics
+    instruction: >
+      Write the comment as what the code is trying to accomplish, not a
+      restatement of the steps it takes to get there. Stating intent has a
+      side benefit: if the code's actual behavior contradicts what you meant
+      it to do, that mismatch becomes visible as soon as someone compares
+      the two, whereas a literal restatement of the steps would agree with
+      a bug by construction.
+    chapter: 6
+    severity: suggestion
+    lintable: false
+
+  - id: C17
+    slug: use-inline-comments-for-mysterious-arguments
+    category: comments
+    title: Label a mysterious function argument inline at the call site
+    instruction: >
+      When a call passes a bare literal whose meaning isn't obvious (a raw
+      number or boolean), use a compact inline comment naming the parameter
+      it fills, placed before the value rather than after it. Reserve this
+      for genuinely mysterious arguments, not every ordinary call.
+    chapter: 6
+    severity: suggestion
+    lintable: false
+    examples:
+      - lang: cpp
+        before: "ScheduleJob(3, true);"
+        after: "ScheduleJob(/* priority = */ 3, /* recurring = */ true);"
+
+  - id: C18
+    slug: use-information-dense-words
+    category: comments
+    title: Reach for an established term of art instead of describing it from scratch
+    instruction: >
+      When a comment is explaining a pattern that already has a common name
+      in the field (memoization, debouncing, an idempotent operation), use
+      that term instead of spelling out the mechanism in full. Reserve new
+      project-specific jargon for cases with no existing term, and define it
+      once the first time it's used.
+    chapter: 6
+    severity: suggestion
+    lintable: false
