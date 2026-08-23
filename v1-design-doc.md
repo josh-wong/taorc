@@ -15,7 +15,7 @@ Four components, one join key.
 | **Catalog** | `catalog/rules.yaml` – the machine-readable registry of all 85 rule IDs | Single source of truth for IDs. Everything else references it; CI enforces referential integrity |
 | **Skill** | `skills/readable-code/` – hand-written `SKILL.md` + `references/` | The product. Prose quality matters, so it is authored, not generated |
 | **Adapters** | Generated managed blocks + manifests for 10+ harnesses | Distribution. Generated because they must be byte-identical |
-| **Linter** | `taorc-lint`, 10 high-precision rules, bundled in the skill's `scripts/` | Objective scoring for evals; a fix-loop the agent can close |
+| **Linter** | `taorc-lint`, 9 high-precision rules, bundled in the skill's `scripts/` | Objective scoring for evals; a fix-loop the agent can close |
 
 The join key is the **rule ID** (`N7`, `C4`, `X2`). It appears in the catalog, in the skill prose, in linter output, in eval scores, and in agent review findings. If an ID appears anywhere and is not in the catalog, CI fails.
 
@@ -204,7 +204,7 @@ Hard ceiling 5,000; target 4,400 to leave headroom for growth.
 | Finding format | 200 | Shared with the linter |
 | **Total** | **~4,450** | |
 
-The full 73 one-liners live in `SKILL.md`, not in references. A rule the agent has to open a file to discover is a rule the agent will not apply. References carry rationale, worked examples, and—most importantly—the *exceptions*.
+The full 85 one-liners live in `SKILL.md`, not in references. A rule the agent has to open a file to discover is a rule the agent will not apply. References carry rationale, worked examples, and—most importantly—the *exceptions*.
 
 ### 4.2 Frontmatter
 
@@ -342,9 +342,9 @@ The single most differentiating file in the repo, and entirely original work. St
 | Test named `test_1`, `test_basic`, `test_works` | `T3` | ✓ | Name the scenario and expectation |
 | Hedging comment: "This should probably..." | `C13` | | Decide, or file a real TODO |
 
-The **Lint** column marks the nine `taorc-lint` catches (the banner and emoji rows share one rule, `X8`); the rest need the agent's judgment.
+The **Lint** column marks the tells `taorc-lint` catches: eight of its nine rules, since the banner and emoji rows share `X8`. The ninth, `N11` (negated boolean name), has no row here — it is an ordinary naming defect rather than a generative habit, so it earns a lint rule without earning a place in this file. Every remaining tell needs the agent's judgment.
 
-Note that four of the most recognizable tells — plan narration, banners, emoji, and unrequested cleanup — land on `X` rules rather than book-derived ones. The book had no reason to warn against habits that only a generative model has.
+Note that three of the most recognizable tells — plan narration, banners, and emoji — land on `X` rules rather than book-derived ones. The book had no reason to warn against habits that only a generative model has.
 
 ## 6. Distribution
 
@@ -494,9 +494,9 @@ One format, used by review mode, refactor mode's change report, and `taorc-lint`
 
 ```text
 taorc_lint.py
-  ├─ shells out to `ast-grep scan --json` with scripts/sgconfig.yml (9 of 10 rules)
+  ├─ shells out to `ast-grep scan --json` with scripts/sgconfig.yml  (8 of 9 rules)
   ├─ implements C1 (comment-echoes-code) in Python over ast-grep's
-  │  comment-node JSON                                              (1 of 10 rules)
+  │  comment-node JSON                                               (1 of 9 rules)
   ├─ merges, sorts, formats (text | json)
   └─ exits 0 unless `--fail-on` is passed (see §8.6)
 ```
@@ -513,7 +513,7 @@ All are high-precision by construction—each fires on a syntactic signature tha
 |---|---|---|---|
 | `C1` | Comment echoes the code below it | See §8.2.1 | warning |
 | `C4` | Placeholder comment | `in a real implementation\|for now\|simplified (version\|example)\|in production` | suggestion |
-| `N1` | Empty-word identifier | Declaration name in `{data,result,output,temp,tmp,val,value,item,obj,info,helper,handler,manager,processor,util,utils}`, **excluding** loop variables, comprehension targets, and functions under 5 lines | warning |
+| `N1` | Empty-word identifier | Declaration name in `{data,result,output,temp,tmp,val,value,item,obj,info}`, **excluding** loop variables, comprehension targets, and functions under 5 lines | warning |
 | `N3` | Unit-free time or size name | Name matches `(delay\|timeout\|elapsed\|duration\|interval\|expiry\|ttl\|size\|length\|limit)$` with no unit suffix and a numeric literal initializer | warning |
 | `N11` | Negated boolean name | Name matches `^(is\|has\|can)?_?(not\|no\|non\|dont\|cant\|disable)` on a boolean-valued declaration | suggestion |
 | `S7` | Commented-out code | Comment body matches statement-shaped source for the language | warning |
@@ -524,6 +524,8 @@ All are high-precision by construction—each fires on a syntactic signature tha
 Severities are deliberately conservative: two `suggestion`, seven `warning`, **zero `error`**. Nothing in v1 fails a build by default. A linter that blocks CI on a naming opinion gets uninstalled.
 
 Each `Sev` above is the severity of that rule's catalog entry, not an independent choice — §3.1 requires the two to agree and CI asserts it. `X8` covers banners and emoji under one ID because they share a rationale and a fix; the ast-grep rule matches either pattern.
+
+`N1`'s word list stops at genuinely contentless nouns. Role words like `handler`, `processor`, `manager`, and `helper` are the `N9` tell instead, and `N9` is not lintable: whether such a name is too abstract depends on what the thing actually does, which a pattern match cannot see. Putting them under `N1` would make the linter cite one ID for a defect a human reviewer, working from §5, reports under another.
 
 #### 8.2.1 C1 in detail
 

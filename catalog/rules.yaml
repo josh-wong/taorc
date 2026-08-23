@@ -597,6 +597,10 @@ rules:
       Use a consistent marker such as TODO, FIXME, HACK, or XXX, plus enough
       context to act on it later, for code that is deliberately incomplete
       or a known compromise, so the gap is discoverable instead of silent.
+      Prose that describes the gap without a marker — noting what a real
+      implementation would do, or that this version is simplified — is the
+      failure this rule names. It reads as commentary rather than as work
+      outstanding, and no search will ever surface it.
     chapter: 5
     severity: suggestion
     lintable: false
@@ -1097,6 +1101,17 @@ rules:
     chapter: 0
     severity: suggestion
     lintable: false
+    exceptions: >
+      Make this change only where the two forms are genuinely equivalent.
+      Dropping a comparison against a boolean literal is safe for a value
+      known to hold a real boolean, but `x == True` and `x` differ for any
+      other truthy value. Testing a collection by using it is safe for
+      built-in containers, but not for types that redefine truthiness: a
+      NumPy array raises on `if x:` where `len(x) > 0` succeeds, and a
+      value that might be None needs that case handled on its own terms.
+      When the type is not evident from nearby code, leave the comparison
+      as it is. This rule is a readability preference, and both `X4` and the
+      catalog's first precedence entry put correctness ahead of it.
     examples:
       - lang: python
         before: "if config.verbose == True and len(warnings) > 0:"
@@ -1470,10 +1485,12 @@ rules:
     title: Delete code that cannot change the outcome
     instruction: >
       Remove error handling for conditions the surrounding code makes
-      impossible, branches no call can reach, options no caller sets, and
-      functions nothing calls. Such code reads as though it guards a real
-      risk, so every future reader spends time identifying which risk before
-      concluding there is none. Version control keeps whatever you delete.
+      impossible, branches no call can reach, options no caller sets,
+      functions nothing calls, and code left behind commented out. Such
+      code reads as though it guards a real risk or preserves a real
+      alternative, so every future reader spends time working out which
+      before concluding there is neither. Version control keeps whatever
+      you delete.
     chapter: 13
     severity: warning
     lintable: false

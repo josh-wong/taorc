@@ -47,8 +47,13 @@ def load_catalog(path: Path | None = None) -> dict[str, Any]:
     with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if data is None:
-        data = {"version": 1, "rules": []}
+        data = {"version": 1}
+    # Fill in every top-level key so callers can index the result without
+    # guarding. An empty catalog still fails schema validation -- 'precedence'
+    # requires at least one entry -- which is the intended outcome, since a
+    # catalog with no tiebreakers cannot resolve a conflict between rules.
     data.setdefault("rules", [])
+    data.setdefault("precedence", [])
     return data
 
 
