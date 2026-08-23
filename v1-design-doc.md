@@ -722,8 +722,8 @@ Given Q3 (the book is available), the catalog is authored against the source rat
 | M | Deliverable | Gate |
 |---|---|---|
 | **MS0** | Repo skeleton, `catalog/schema.json`, `build.py`, `validate.py`, CI green on an empty catalog | Generation and validation work before content exists |
-| **MS1** | Catalog drafted, chapters 1–6 (P, N, A, C – 34 rules), verified per §11 | Josh's verification pass |
-| **MS2** | Catalog complete (all 73), `chapter-map.md` | Referential integrity green |
+| **MS1** | Catalog drafted, chapters 1–6 (P, N, A, C – 44 rules; original estimate of 34 was revised upward during drafting), verified per §11 | Josh's verification pass |
+| **MS2** | Catalog complete, `chapter-map.md` (the "all 73" total below needs to be reassessed against MS1's actual 44, since it was sized against the original 34-rule estimate for chapters 1–6) | Referential integrity green |
 | **MS3** | `SKILL.md` + all 9 reference files | Token budget green; manual read-through |
 | **MS4** | `taorc-lint` + fixtures + configs | M5 false-positive target met |
 | **MS5** | Adapters + installers + manifests | Installer + placement-matrix tests green on 3 OSes; 4-harness manual pass recorded in `docs/harness-verification.md` |
