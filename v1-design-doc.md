@@ -513,12 +513,12 @@ All are high-precision by construction—each fires on a syntactic signature tha
 |---|---|---|---|
 | `C1` | Comment echoes the code below it | See §8.2.1 | warning |
 | `C4` | Placeholder comment | `in a real implementation\|for now\|simplified (version\|example)\|in production` | suggestion |
-| `N1` | Empty-word identifier | Declaration name in `{data,result,output,temp,tmp,val,value,item,obj,info}`, **excluding** loop variables, comprehension targets, and functions under 5 lines | warning |
+| `N1` | Empty-word identifier | Declaration name in `{data,result,output,value,item,obj,info}`, **excluding** loop variables, comprehension targets, and functions under 5 lines | warning |
 | `N3` | Unit-free time or size name | Name matches `(delay\|timeout\|elapsed\|duration\|interval\|expiry\|ttl\|size\|length\|limit)$` with no unit suffix and a numeric literal initializer | warning |
 | `N11` | Negated boolean name | Name matches `^(is\|has\|can)?_?(not\|no\|non\|dont\|cant\|disable)` on a boolean-valued declaration | suggestion |
 | `S7` | Commented-out code | Comment body matches statement-shaped source for the language | warning |
 | `T3` | Uninformative test name | Test function name matches `^test_?(\d+\|it\|works\|basic\|main\|case\d*)?$` | warning |
-| `X7` | Plan narration comment | Comment matches `^\W*(step \d|first,|next,|then,|finally,|now (we\|let's))` | warning |
+| `X7` | Plan narration comment | Comment matches `^\W*(step \d\|first,\|next,\|then,\|finally,\|now (we\|let's))` | warning |
 | `X8` | Banner comment or emoji | Comment matches `[=\-*_#]{5,}`, or a comment or string literal contains a Unicode emoji | warning |
 
 Severities are deliberately conservative: two `suggestion`, seven `warning`, **zero `error`**. Nothing in v1 fails a build by default. A linter that blocks CI on a naming opinion gets uninstalled.
@@ -526,6 +526,8 @@ Severities are deliberately conservative: two `suggestion`, seven `warning`, **z
 Each `Sev` above is the severity of that rule's catalog entry, not an independent choice — §3.1 requires the two to agree and CI asserts it. `X8` covers banners and emoji under one ID because they share a rationale and a fix; the ast-grep rule matches either pattern.
 
 `N1`'s word list stops at genuinely contentless nouns. Role words like `handler`, `processor`, `manager`, and `helper` are the `N9` tell instead, and `N9` is not lintable: whether such a name is too abstract depends on what the thing actually does, which a pattern match cannot see. Putting them under `N1` would make the linter cite one ID for a defect a human reviewer, working from §5, reports under another.
+
+The same boundary excludes `tmp`, `temp`, `val`, and `retval`, which belong to `N2`. `N2` does not forbid them — it permits them precisely where the variable's whole life is a line or two — so linting them under `N1` would fire on the swap slot `N2` blesses, and would report it under an ID whose rule text says nothing about lifetime. `N2` stays unlintable for the same reason `N9` does: the test is how long the value lives, which the pattern cannot see.
 
 #### 8.2.1 C1 in detail
 

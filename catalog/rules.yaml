@@ -1494,6 +1494,17 @@ rules:
     chapter: 13
     severity: warning
     lintable: false
+    exceptions: >
+      "Nothing calls it" is a claim about the whole world, and a repository
+      only shows you part of it. Apply this to symbols private to their module;
+      for anything exported, propose the deletion rather than making it, on the
+      same reasoning `X3` gives for renames — a caller you cannot see is still
+      a caller. Treat an unreachable branch or an impossible error condition
+      the same way when the reasoning depends on assumptions rather than on
+      the code in front of you: leaving dead code costs a reader time, while
+      deleting live code costs correctness, and the catalog's first precedence
+      entry settles which of those wins. Commented-out code is the one part of
+      this rule that is always safe to act on.
     examples:
       - lang: python
         before: |
