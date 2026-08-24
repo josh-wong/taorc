@@ -11,10 +11,19 @@
     // "## Summary" by design, matching CONTRIBUTING's checklist format).
     "MD041": false,
     // The design/PRD docs align table pipes for source readability per
-    // AGENTS.md; MD060's "compact" style would fight that convention, and
-    // it also misparses pipe characters inside inline-code regex examples
-    // as extra columns.
+    // AGENTS.md; MD060's "compact" style would fight that convention. The
+    // markdownlint version CI currently runs has no MD060 at all, so this
+    // line is inert today and holds the decision for a later upgrade.
     "MD060": false,
-    "MD056": false
+    // Stated explicitly, though "default": true would enable it anyway,
+    // because this rule was previously disabled and the reason it is back on
+    // matters. It was switched off alongside MD060 on the grounds that it
+    // misparses pipes inside inline-code regex examples as extra columns.
+    // That is not what it does: GFM genuinely splits a table cell on an
+    // unescaped pipe even inside a code span, so a row MD056 rejects is a row
+    // that really does render wrong, and it ignores a properly escaped `\|`.
+    // Leaving it off let §8.2's plan-narration row render as nine cells in a
+    // four-column table, displaying part of the regex where Sev belonged.
+    "MD056": true
   }
 }
