@@ -132,20 +132,23 @@ The heart of the product. A numbered, stable, citable catalog derived from the b
 
 **R1.1 – Categories and ID scheme.** Letter-prefixed, stable across versions, never renumbered (deprecate, don't reuse):
 
-| Prefix | Category | Book chapters | Est. rules |
-|---|---|---|---|
-| `P` | Principles | 1 | 3 |
-| `N` | Names – packing information in, avoiding misconstrual | 2, 3 | 12 |
-| `A` | Aesthetics and layout | 4 | 5 |
-| `C` | Comments – what to comment, and how | 5, 6 | 14 |
-| `F` | Control flow | 7 | 7 |
-| `E` | Expressions | 8 | 5 |
-| `V` | Variables and scope | 9 | 5 |
-| `S` | Structure – subproblems, one task at a time, less code | 10–13 | 8 |
-| `T` | Tests and readability | 14 | 6 |
-| `X` | **Agent guardrails** (original content, not from the book) | – | 8 |
+| Prefix | Category | Book chapters | Est. rules | Shipped |
+|---|---|---|---|---|
+| `P` | Principles | 1 | 3 | 3 |
+| `N` | Names – packing information in, avoiding misconstrual | 2, 3 | 12 | 16 |
+| `A` | Aesthetics and layout | 4 | 5 | 7 |
+| `C` | Comments – what to comment, and how | 5, 6 | 14 | 18 |
+| `F` | Control flow | 7 | 7 | 7 |
+| `E` | Expressions | 8 | 5 | 6 |
+| `V` | Variables and scope | 9 | 5 | 5 |
+| `S` | Structure – subproblems, one task at a time, less code | 10–13 | 8 | 9 |
+| `T` | Tests and readability | 14 | 6 | 6 |
+| `X` | **Agent guardrails** (original content, not from the book) | – | 8 | 8 |
+| | | | **73** | **85** |
 
-Target: **65–75 rules**. Each rule is one line of instruction plus, where it earns its place, a compact before/after in a common language.
+Original target: **65–75 rules**. Each rule is one line of instruction plus, where it earns its place, a compact before/after in a common language.
+
+The catalog shipped at **85** (MS2). The estimate is kept above rather than overwritten, because the gap is the useful part: chapters 2–6 held more separable rules than the pre-drafting estimate assumed — names and comments alone account for 8 of the 12 extra — while chapters 7–14 came in at 32 against an estimate of 31. Rule IDs are permanent (R1.1), so the overrun is recorded here, not corrected by renumbering. `v1-design-doc.md` §3.2 carries the same two columns.
 
 **R1.2 – The `X` category is original and load-bearing.** These are the rules the book could not have written because they are about *how an agent applies the other rules*:
 
@@ -245,7 +248,9 @@ Every adapter, manifest, and condensed prompt is generated from those. **No hand
 
 ### R6 – `taorc-lint` (deterministic checker)
 
-**R6.1** – A checker covering the mechanically-detectable subset. Per the Q1 decision, v1 ships **10 high-precision rules** of the 73: comment-echoes-next-line, `// Step N:` narration, banner comments, emoji in comments, placeholder comments, commented-out code, empty-word identifiers, unit-free time/size names, negated boolean names, and test names without a scenario.
+**R6.1** – A checker covering the mechanically-detectable subset. Per the Q1 decision, v1 ships **9 high-precision rules** of the 85: comment-echoes-next-line, `// Step N:` narration, banner comments *or* emoji, placeholder comments, commented-out code, empty-word identifiers, unit-free time/size names, negated boolean names, and test names without a scenario.
+
+This listed 10 before MS2. Banner comments and emoji were separate entries here but resolved to a single catalog rule, `X8`, because they share a rationale and a fix; one catalog ID maps to one lint rule, so they were merged rather than duplicated. The Q1 decision this requirement records recommended "8–10 high-precision rules" — 9 is inside that band, so this is a correction to an over-specified requirement, not a reduction in scope.
 
 Structural checks that mainstream linters already do well—nesting depth, function length, boolean-expression complexity—are **out of scope by design**. `taorc` ships tuned `ruff`/`eslint` config for those instead of reimplementing them.
 
@@ -255,7 +260,7 @@ Structural checks that mainstream linters already do well—nesting depth, funct
 
 **R6.4** – Must ship with a false-positive fixture suite. A noisy linter here is worse than none—it trains users to ignore the whole product.
 
-**R6.5** – **Scope**: resolved by Q1. The 10-rule, two-language v1 above is deliberately small so this component cannot sink the release; expansion is v1.x.
+**R6.5** – **Scope**: resolved by Q1. The 9-rule, two-language v1 above is deliberately small so this component cannot sink the release; expansion is v1.x.
 
 ### R7 – Evals
 
@@ -311,7 +316,7 @@ Structural checks that mainstream linters already do well—nesting depth, funct
 - `prompts/system-prompt.md`
 - `examples/before-after.md`
 - Distribution to all R3.2 targets, generated from source, CI-validated
-- `taorc-lint` v1: the 10 high-precision rules in R6.1, Python + TypeScript, ast-grep
+- `taorc-lint` v1: the 9 high-precision rules in R6.1, Python + TypeScript, ast-grep
 - Claude Code output style for review-mode formatting
 - Evals (R7) with published results, cross-model (Claude + GPT + open-weights)
 - README, CONTRIBUTING, CHANGELOG, LICENSE, disclaimer
@@ -319,7 +324,7 @@ Structural checks that mainstream linters already do well—nesting depth, funct
 
 ### v1.x (fast follow)
 
-- `taorc-lint` rule expansion beyond the initial 10; Go, Rust, Java, C#
+- `taorc-lint` rule expansion beyond the initial 9; Go, Rust, Java, C#
 - Additional languages in `language-map.md`
 - Pre-commit hook integration
 

@@ -12,10 +12,10 @@ Four components, one join key.
 
 | Component | What it is | Why it exists |
 |---|---|---|
-| **Catalog** | `catalog/rules.yaml` – the machine-readable registry of all 73 rule IDs | Single source of truth for IDs. Everything else references it; CI enforces referential integrity |
+| **Catalog** | `catalog/rules.yaml` – the machine-readable registry of all 85 rule IDs | Single source of truth for IDs. Everything else references it; CI enforces referential integrity |
 | **Skill** | `skills/readable-code/` – hand-written `SKILL.md` + `references/` | The product. Prose quality matters, so it is authored, not generated |
 | **Adapters** | Generated managed blocks + manifests for 10+ harnesses | Distribution. Generated because they must be byte-identical |
-| **Linter** | `taorc-lint`, 10 high-precision rules, bundled in the skill's `scripts/` | Objective scoring for evals; a fix-loop the agent can close |
+| **Linter** | `taorc-lint`, 9 high-precision rules, bundled in the skill's `scripts/` | Objective scoring for evals; a fix-loop the agent can close |
 
 The join key is the **rule ID** (`N7`, `C4`, `X2`). It appears in the catalog, in the skill prose, in linter output, in eval scores, and in agent review findings. If an ID appears anywhere and is not in the catalog, CI fails.
 
@@ -121,20 +121,20 @@ Note: `skills/readable-code/` sits at a path `npx skills` discovers natively (`s
 # catalog/rules.yaml
 version: 1
 rules:
-  - id: N7
-    slug: encode-units-in-names
+  - id: N3
+    slug: encode-units-and-formats-in-names
     category: names
-    title: Put the unit in the name when the value has one
+    title: Put units, formats, or encodings in the name when the value could be misread
     instruction: >
       When a number carries a unit, put the unit in the identifier.
       Bare `delay`, `size`, and `limit` force the reader to hunt for the unit.
     rationale: >
-      The reader's alternative is to trace the value to its source. That is the
-      exact cost the Fundamental Theorem tells you to minimize.
+      The reader's alternative is to trace the value back to its source, which
+      is the cost `P1` exists to minimize.
     chapter: 2
-    severity: suggestion     # error | warning | suggestion
+    severity: warning        # error | warning | suggestion
     lintable: true
-    lint_rule: taorc-n7-unit-free-name
+    lint_rule: taorc-n3-unit-free-name
     applies_to: [all]
     examples:
       - lang: typescript
@@ -143,30 +143,43 @@ rules:
     exceptions: >
       Skip when the project has a pervasive typed unit (a `Duration` type,
       `chrono::Duration`, `datetime.timedelta`) – the type already says it.
+
+precedence:
+  - Correctness beats readability. ...
 ```
 
-Required: `id`, `slug`, `category`, `title`, `instruction`, `chapter`, `severity`, `lintable`.
+Required: `id`, `slug`, `category`, `title`, `instruction`, `chapter`, `severity`, `lintable`. The top-level `precedence` list is also required; see §3.2.1.
 
-- `chapter: 0` marks original content (the `X` category), which has no book source.
+The entry above shows `lintable: true` to illustrate the field. In the shipped catalog every rule is `lintable: false` until MS4 adds the matching `scripts/rules/*/` file, because CI checks that pairing in both directions.
+
+- `chapter: 0` marks original content with no book source. That is the entire `X` category, plus any rule in another category that the book does not cover; see §3.2.
 - `severity` ranks findings in review mode and sets the linter's level for lintable rules. CI asserts the two never disagree: a lint rule's `severity` must equal its catalog entry's.
 - `applies_to` is a list of language identifiers (`python`, `typescript`, `go`, `rust`, `java`, `csharp`) or the literal `all`. It exists for the handful of rules that are language-specific — a rule about docstring conventions does not apply to Go. Defaults to `[all]` when omitted.
 - `lint_rule` is required when `lintable: true` and must name a rule file that exists under `scripts/rules/`; CI checks both directions.
 
 ### 3.2 Categories and budget
 
-| Prefix | Category | Chapters | Rules | Reference file |
-|---|---|---|---|---|
-| `P` | Principles | 1 | 3 | in `SKILL.md` |
-| `N` | Names | 2, 3 | 12 | `naming.md` |
-| `A` | Aesthetics | 4 | 5 | `naming.md` |
-| `C` | Comments | 5, 6 | 14 | `comments.md` |
-| `F` | Control flow | 7 | 7 | `control-flow.md` |
-| `E` | Expressions | 8 | 5 | `control-flow.md` |
-| `V` | Variables | 9 | 5 | `control-flow.md` |
-| `S` | Structure | 10–13 | 8 | `structure.md` |
-| `T` | Tests | 14 | 6 | `tests.md` |
-| `X` | Agent guardrails | – | 8 | in `SKILL.md` |
-| | | | **73** | |
+| Prefix | Category | Chapters | Est. | Shipped | Reference file |
+|---|---|---|---|---|---|
+| `P` | Principles | 1 | 3 | 3 | in `SKILL.md` |
+| `N` | Names | 2, 3 | 12 | 16 | `naming.md` |
+| `A` | Aesthetics | 4 | 5 | 7 | `naming.md` |
+| `C` | Comments | 5, 6 | 14 | 18 | `comments.md` |
+| `F` | Control flow | 7 | 7 | 7 | `control-flow.md` |
+| `E` | Expressions | 8 | 5 | 6 | `control-flow.md` |
+| `V` | Variables | 9 | 5 | 5 | `control-flow.md` |
+| `S` | Structure | 10–13 | 8 | 9 | `structure.md` |
+| `T` | Tests | 14 | 6 | 6 | `tests.md` |
+| `X` | Agent guardrails | – | 8 | 8 | in `SKILL.md` |
+| | | | **73** | **85** | |
+
+The **Est.** column is the pre-drafting estimate this document and PRD R1.1 were sized against; **Shipped** is the catalog as built. Nearly all the overrun is in chapters 2–6, which held more separable rules than estimated; chapters 7–14 came in at 32 against an estimate of 31, as §11 predicted they would. The 65–75 target in PRD R1.1 is superseded by this table.
+
+`chapter: 0` marks a rule with no source in the book. That is the whole `X` category by construction, and `E4`, which catalogues a habit common in generated code that the book never discusses. Two further departures — `S6` inverting chapter 10's emphasis, and chapter 7's `goto` section having no rule — are recorded in `references/chapter-map.md` and in the `rationale` of the rule concerned.
+
+### 3.2.1 Precedence
+
+`catalog/rules.yaml` carries a top-level `precedence` list (PRD R1.3) alongside `rules`. It is ordered — earlier entries win — and it is the tiebreaker set `SKILL.md` §4 renders for the agent. It lives in the catalog rather than only in prose so that a conflict between two rules resolves against a validated source rather than a paraphrase in whichever adapter the agent happens to have loaded.
 
 ### 3.3 ID stability
 
@@ -184,14 +197,14 @@ Hard ceiling 5,000; target 4,400 to leave headroom for growth.
 | The premise | 150 | The Fundamental Theorem, in our words, and why it binds agents specifically |
 | When this applies / modes | 350 | Mode table, mode inference |
 | Operating loop | 500 | 5 steps |
-| Rule catalog | 2,200 | All 73 rules, one line each, in tables by category |
+| Rule catalog | 2,200 | All 85 rules, one line each, in tables by category |
 | Precedence | 250 | The 5 tiebreakers |
 | Self-check | 350 | The pre-delivery checklist |
 | Reference map | 250 | When to load which file |
 | Finding format | 200 | Shared with the linter |
 | **Total** | **~4,450** | |
 
-The full 73 one-liners live in `SKILL.md`, not in references. A rule the agent has to open a file to discover is a rule the agent will not apply. References carry rationale, worked examples, and—most importantly—the *exceptions*.
+The full 85 one-liners live in `SKILL.md`, not in references. A rule the agent has to open a file to discover is a rule the agent will not apply. References carry rationale, worked examples, and—most importantly—the *exceptions*.
 
 ### 4.2 Frontmatter
 
@@ -271,13 +284,13 @@ Step 5 is load-bearing. Giving the agent a sanctioned way to *say* "I noticed `u
 Ten questions, ordered by how often agents fail them:
 
 1. Does any comment restate what the line below it does? Delete it. (C1)
-2. Does any comment narrate my own plan—"Step 1", "First, we"? Delete it. (C2, X7)
-3. Would a new reader know the unit of every number I named? (N7)
-4. Is any name an empty word—`data`, `result`, `handler`, `process`? (N1)
-5. Is any non-obvious decision left unexplained? Add the *why*. (C7)
-6. Can any nested block become a guard clause? (F4)
+2. Does any comment narrate my own plan—"Step 1", "First, we"? Delete it. (X7)
+3. Would a new reader know the unit of every number I named? (N3)
+4. Is any name an empty word—`data`, `result`—or a role word—`handler`, `manager`? (N1, N9)
+5. Is any non-obvious decision left unexplained? Add the *why*. (C6)
+6. Can any nested block become a guard clause? (F5, F6)
 7. Is any boolean expression more than three terms? (E1)
-8. Does any function do more than one thing my one-sentence description can cover? (S4)
+8. Does any function do more than one thing my one-sentence description can cover? (S3)
 9. Do my test names say the scenario and the expected result? (T3)
 10. Did I change anything the task did not require? (X1)
 
@@ -310,26 +323,28 @@ The single most differentiating file in the repo, and entirely original work. St
 
 | Tell | Rule | Lint | Fix |
 |---|---|---|---|
-| Comment restates the next line | C1 | ✓ | Delete |
-| `// Step 1:` / `// First, we...` plan narration | C2 | ✓ | Delete |
-| `# ===== HELPERS =====` banner | C3 | ✓ | Delete; if the file needs sections, it needs splitting |
-| Emoji in comments, log lines, or output | C4 | ✓ | Delete |
-| Docstring restates the signature, adds nothing | C5 | | Delete or replace with why/constraints |
-| `# In a real implementation, you would...` | C6 | ✓ | Delete or convert to a real `TODO(owner):` |
-| Commented-out code left behind | C8 | ✓ | Delete; git remembers |
-| `data`, `result`, `output`, `info`, `item` | N1 | ✓ | Name the thing |
-| `handler`, `processor`, `manager`, `helper` | N2 | | Name the action |
-| `utils.py` / `helpers.ts` accumulating unrelated functions | S2 | | Name the domain concept |
-| Bare `timeout`, `size`, `limit` | N7 | ✓ | Add the unit or bound |
-| Single-use helper abstracted "for reusability" | S6 | | Inline it |
-| Try/except wrapped around code that cannot throw | S7 | | Delete |
-| Reimplemented `groupby` / `Counter` / `zip` | S8 | | Use the library |
-| Intermediate variable that exists only to be returned | V1 | | Return directly |
-| `if x == True:` / `if len(x) > 0:` | E4 | | `if x:` |
-| Test named `test_1`, `test_basic`, `test_works` | T3 | ✓ | Name the scenario and expectation |
-| Hedging comment: "This should probably..." | C9 | | Decide, or file a real TODO |
+| Comment restates the next line | `C1` | ✓ | Delete |
+| `// Step 1:` / `// First, we...` plan narration | `X7` | ✓ | Delete |
+| `# ===== HELPERS =====` banner | `X8` | ✓ | Delete; if the file needs sections, it needs splitting |
+| Emoji in comments, log lines, or output | `X8` | ✓ | Delete |
+| Docstring restates the signature, adds nothing | `C14` | | Delete or replace with why/constraints |
+| `# In a real implementation, you would...` | `C4` | ✓ | Delete or convert to a real `TODO(owner):` |
+| Commented-out code left behind | `S7` | ✓ | Delete; git remembers |
+| `data`, `result`, `output`, `info`, `item` | `N1` | ✓ | Name the thing |
+| `handler`, `processor`, `manager`, `helper` | `N9` | | Name the action |
+| `utils.py` / `helpers.ts` accumulating unrelated functions | `S2` | | Name the domain concept |
+| Bare `timeout`, `size`, `limit` | `N3` | ✓ | Add the unit or bound |
+| Single-use helper abstracted "for reusability" | `S6` | | Inline it |
+| Try/except wrapped around code that cannot throw | `S7` | | Delete |
+| Reimplemented `groupby` / `Counter` / `zip` | `S8` | | Use the library |
+| Intermediate variable that exists only to be returned | `V1` | | Return directly |
+| `if x == True:` / `if len(x) > 0:` | `E4` | | `if x:` |
+| Test named `test_1`, `test_basic`, `test_works` | `T3` | ✓ | Name the scenario and expectation |
+| Hedging comment: "This should probably..." | `C13` | | Decide, or file a real TODO |
 
-The **Lint** column marks the nine `taorc-lint` catches; the rest need the agent's judgment.
+The **Lint** column marks the tells `taorc-lint` catches: eight of its nine rules, since the banner and emoji rows share `X8`. The ninth, `N11` (negated boolean name), has no row here — it is an ordinary naming defect rather than a generative habit, so it earns a lint rule without earning a place in this file. Every remaining tell needs the agent's judgment.
+
+Note that three of the most recognizable tells — plan narration, banners, and emoji — land on `X` rules rather than book-derived ones. The book had no reason to warn against habits that only a generative model has.
 
 ## 6. Distribution
 
@@ -347,7 +362,7 @@ The **Lint** column marks the nine `taorc-lint` catches; the rest need the agent
 | — | `prompts/*.md` are **not** generated; see below |
 | `.claude-plugin/*`, `.codex-plugin/*`, `gemini-extension.json` | version field sync only |
 
-**The prompts are hand-written.** Condensing 73 rules into 800 tokens is an editorial judgment about which rules survive, not a mechanical transform, and §1's policy says prose that must read well is authored. `build.py` does not touch `prompts/`; CI still enforces their token budgets (check 4) and that every ID they cite exists (check 2). Treating them as generated would have meant inventing a selection algorithm nobody could tune.
+**The prompts are hand-written.** Condensing 85 rules into 800 tokens is an editorial judgment about which rules survive, not a mechanical transform, and §1's policy says prose that must read well is authored. `build.py` does not touch `prompts/`; CI still enforces their token budgets (check 4) and that every ID they cite exists (check 2). Treating them as generated would have meant inventing a selection algorithm nobody could tune.
 
 Managed block markers:
 
@@ -373,13 +388,13 @@ first existing path wins—`.claude/skills/readable-code/SKILL.md`,
 `skills/readable-code/SKILL.md`. Read it before non-trivial work.
 
 ### Always
-- Name the thing, not its shape. No `data`, `result`, `handler`, `helper`. (N1, N2)
-- Put the unit in the name: `timeoutSecs`, not `timeout`. (N7)
+- Name the thing, not its shape. No `data`, `result`, `handler`, `helper`. (N1, N9)
+- Put the unit in the name: `timeoutSecs`, not `timeout`. (N3)
 - Comment *why*, never *what*. If a comment restates the line below it, delete it. (C1)
-- No plan narration ("Step 1:"), no banner comments, no emoji in code. (C2, C3, C4)
-- Guard clauses over nesting. Handle the simple case first. (F2, F4)
+- No plan narration ("Step 1:"), no banner comments, no emoji in code. (X7, X8)
+- Guard clauses over nesting. Handle the simple case first. (F2, F5, F6)
 - More than three terms in a condition: name the parts. (E1)
-- One task per function. If describing it needs "and", split it. (S4)
+- One task per function. If describing it needs "and", split it. (S3)
 - Test names say the scenario and the expected result. (T3)
 
 ### Never
@@ -457,7 +472,7 @@ So the release gate is **four manual smoke tests, one per delivery path plus the
 One format, used by review mode, refactor mode's change report, and `taorc-lint`. Shared format means the agent's fix-loop reads its own output and the linter's output identically.
 
 ```text
-[N7] src/api/client.ts:42  Name has no unit
+[N3] src/api/client.ts:42  Name has no unit
   const timeout = 30;
   → rename to `timeoutSecs` (or `timeoutMs` if milliseconds)
 ```
@@ -479,9 +494,9 @@ One format, used by review mode, refactor mode's change report, and `taorc-lint`
 
 ```text
 taorc_lint.py
-  ├─ shells out to `ast-grep scan --json` with scripts/sgconfig.yml (9 of 10 rules)
+  ├─ shells out to `ast-grep scan --json` with scripts/sgconfig.yml  (8 of 9 rules)
   ├─ implements C1 (comment-echoes-code) in Python over ast-grep's
-  │  comment-node JSON                                              (1 of 10 rules)
+  │  comment-node JSON                                               (1 of 9 rules)
   ├─ merges, sorts, formats (text | json)
   └─ exits 0 unless `--fail-on` is passed (see §8.6)
 ```
@@ -496,18 +511,23 @@ All are high-precision by construction—each fires on a syntactic signature tha
 
 | ID | Rule | Detection | Sev |
 |---|---|---|---|
-| C1 | Comment echoes the code below it | See §8.2.1 | warning |
-| C2 | Plan narration comment | Comment matches `^\W*(step \d|first,|next,|then,|finally,|now (we\|let's))` | warning |
-| C3 | Banner comment | Comment matches `[=\-*_#]{5,}` | warning |
-| C4 | Emoji in comment or string literal | Unicode emoji ranges | warning |
-| C6 | Placeholder comment | `in a real implementation\|for now\|simplified (version\|example)\|in production` | warning |
-| C8 | Commented-out code | Comment body matches statement-shaped source for the language | warning |
-| N1 | Empty-word identifier | Declaration name in `{data,result,output,temp,tmp,val,value,item,obj,info,helper,handler,manager,processor,util,utils}`, **excluding** loop variables, comprehension targets, and functions under 5 lines | suggestion |
-| N7 | Unit-free time or size name | Name matches `(delay\|timeout\|elapsed\|duration\|interval\|expiry\|ttl\|size\|length\|limit)$` with no unit suffix and a numeric literal initializer | suggestion |
-| N9 | Negated boolean name | Name matches `^(is\|has\|can)?_?(not\|no\|non\|dont\|cant\|disable)` on a boolean-valued declaration | suggestion |
-| T3 | Uninformative test name | Test function name matches `^test_?(\d+\|it\|works\|basic\|main\|case\d*)?$` | suggestion |
+| `C1` | Comment echoes the code below it | See §8.2.1 | warning |
+| `C4` | Placeholder comment | `in a real implementation\|for now\|simplified (version\|example)\|in production` | suggestion |
+| `N1` | Empty-word identifier | Declaration name in `{data,result,output,value,item,obj,info}`, **excluding** loop variables, comprehension targets, and functions under 5 lines | warning |
+| `N3` | Unit-free time or size name | Name matches `(delay\|timeout\|elapsed\|duration\|interval\|expiry\|ttl\|size\|length\|limit)$` with no unit suffix and a numeric literal initializer | warning |
+| `N11` | Negated boolean name | Name matches `^(is\|has\|can)?_?(not\|no\|non\|dont\|cant\|disable)` on a boolean-valued declaration | suggestion |
+| `S7` | Commented-out code | Comment body matches statement-shaped source for the language | warning |
+| `T3` | Uninformative test name | Test function name matches `^test_?(\d+\|it\|works\|basic\|main\|case\d*)?$` | warning |
+| `X7` | Plan narration comment | Comment matches `^\W*(step \d\|first,\|next,\|then,\|finally,\|now (we\|let's))` | warning |
+| `X8` | Banner comment or emoji | Comment matches `[=\-*_#]{5,}`, or a comment or string literal contains a Unicode emoji | warning |
 
-Severities are deliberately conservative: four `suggestion`, six `warning`, **zero `error`**. Nothing in v1 fails a build by default. A linter that blocks CI on a naming opinion gets uninstalled.
+Severities are deliberately conservative: two `suggestion`, seven `warning`, **zero `error`**. Nothing in v1 fails a build by default. A linter that blocks CI on a naming opinion gets uninstalled.
+
+Each `Sev` above is the severity of that rule's catalog entry, not an independent choice — §3.1 requires the two to agree and CI asserts it. `X8` covers banners and emoji under one ID because they share a rationale and a fix; the ast-grep rule matches either pattern.
+
+`N1`'s word list stops at genuinely contentless nouns. Role words like `handler`, `processor`, `manager`, and `helper` are the `N9` tell instead, and `N9` is not lintable: whether such a name is too abstract depends on what the thing actually does, which a pattern match cannot see. Putting them under `N1` would make the linter cite one ID for a defect a human reviewer, working from §5, reports under another.
+
+The same boundary excludes `tmp`, `temp`, `val`, and `retval`, which belong to `N2`. `N2` does not forbid them — it permits them precisely where the variable's whole life is a line or two — so linting them under `N1` would fire on the swap slot `N2` blesses, and would report it under an ID whose rule text says nothing about lifetime. `N2` stays unlintable for the same reason `N9` does: the test is how long the value lives, which the pattern cannot see.
 
 #### 8.2.1 C1 in detail
 
@@ -546,18 +566,18 @@ Both the 80% threshold and the two word lists are starting values, tuned against
 ### 8.3 Rule file shape
 
 ```yaml
-# skills/readable-code/scripts/rules/typescript/c3-banner-comment.yml
-id: taorc-c3-banner-comment
+# skills/readable-code/scripts/rules/typescript/x8-banner-comment.yml
+id: taorc-x8-banner-comment
 language: TypeScript
 severity: warning
-message: "[C3] Banner comment"
+message: "[X8] Banner comment"
 note: "→ delete it; a file that needs section dividers needs splitting"
 rule:
   kind: comment
   regex: '[=\-*_#]{5,}'
 ```
 
-`ast-grep`'s `id` carries the descriptive slug; `message` carries the citable `[C3]`. The scan output is parsed on `[ID]` prefix.
+`ast-grep`'s `id` carries the descriptive slug; `message` carries the citable `[X8]`. The scan output is parsed on `[ID]` prefix.
 
 ### 8.4 Fixtures
 
@@ -595,7 +615,7 @@ taorc_lint.py [paths...]
   --changed          lint files changed vs. the merge base (agent default)
   --format text|json
   --severity suggestion|warning|error   minimum reported
-  --rules C1,N7      subset
+  --rules C1,N3      subset
   --show-suppressed  list suppressed findings and their reasons
   --fail-on warning  exit non-zero at or above (default: never fail)
 ```
@@ -607,7 +627,7 @@ taorc_lint.py [paths...]
 1. **Schema** – `catalog/rules.yaml` violates `catalog/schema.json`.
 2. **Referential integrity** – an ID cited in any `.md`, lint rule, or eval scorer that is not in the catalog; or a catalog rule missing from `SKILL.md`'s catalog table. *This is the check that holds the whole design together.*
 
-   The second half is deliberately weaker than "cited somewhere": `SKILL.md` lists all 73, so appearing there is the floor. Requiring a citation in the managed block, the self-check, or `ai-code-tells.md` would drag every rule into those artifacts to satisfy CI—which is precisely how the block stops being a summary. Categories `A` and `P` legitimately live only in the catalog table and `naming.md`.
+   The second half is deliberately weaker than "cited somewhere": `SKILL.md` lists all 85, so appearing there is the floor. Requiring a citation in the managed block, the self-check, or `ai-code-tells.md` would drag every rule into those artifacts to satisfy CI—which is precisely how the block stops being a summary. Categories `A` and `P` legitimately live only in the catalog table and `naming.md`.
 3. **Skill spec** – `skills-ref validate ./skills/readable-code` fails, or `name` ≠ directory name.
 4. **Budgets** – `SKILL.md` > 5,000 tokens or > 500 lines (PRD R2.2); `templates/agent-block.md` > 700 tokens (§6.2); `system-prompt.md` > 800; `system-prompt-mini.md` > 150. Tokens measured with a real tokenizer, not word count.
 5. **Adapter drift** – any generated file differs from what `build.py` would produce. (Run `build.py`, `git diff --exit-code`.)
@@ -723,7 +743,7 @@ Given Q3 (the book is available), the catalog is authored against the source rat
 |---|---|---|
 | **MS0** | Repo skeleton, `catalog/schema.json`, `build.py`, `validate.py`, CI green on an empty catalog | Generation and validation work before content exists |
 | **MS1** | Catalog drafted, chapters 1–6 (P, N, A, C – 44 rules; original estimate of 34 was revised upward during drafting), verified per §11 | Josh's verification pass |
-| **MS2** | Catalog complete, `chapter-map.md` (the "all 73" total below needs to be reassessed against MS1's actual 44, since it was sized against the original 34-rule estimate for chapters 1–6) | Referential integrity green |
+| **MS2** | Catalog complete (85 rules), `chapter-map.md`, `precedence` in the catalog | Referential integrity green |
 | **MS3** | `SKILL.md` + all 9 reference files | Token budget green; manual read-through |
 | **MS4** | `taorc-lint` + fixtures + configs | M5 false-positive target met |
 | **MS5** | Adapters + installers + manifests | Installer + placement-matrix tests green on 3 OSes; 4-harness manual pass recorded in `docs/harness-verification.md` |
@@ -739,7 +759,7 @@ MS7 is the milestone most likely to be skipped and least likely to be skippable.
 | Risk | Mitigation |
 |---|---|
 | **The `description` under-triggers on implicit tasks** – the skill only fires when someone says "readable" | M4 gated on the 100-prompt tier-1 suite (§10.4), cheap enough to run on every `description` change; tier-2 spot check confirms the proxy tracks reality |
-| **The catalog is too long for the agent to apply** – 73 rules exceeds working attention | The self-check (§4.5) is only 10 items, ordered by observed failure frequency. If evals show low application, cut the catalog to the 30 that move metrics, and move the rest to references |
+| **The catalog is too long for the agent to apply** – 85 rules exceeds working attention | The self-check (§4.5) is only 10 items, ordered by observed failure frequency. If evals show low application, cut the catalog to the 30 that move metrics, and move the rest to references |
 | **Generated adapters drift silently** | CI check 5 (§9) makes drift a build failure, not a discovery |
 | **`taorc-lint` fires on the repo's own examples** | Run it over `examples/` in CI; every intentional violation carries an inline suppression, which also proves suppression works |
 | **Over-application despite guardrails** | M3 measured on 3 of 10 scenarios; the "report what you left alone" step (§4.4 step 5) gives the agent an outlet |

@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """The CI validation gate (v1-design-doc.md §9).
 
-Checks that apply once the relevant content exists are skipped gracefully
-against the empty/placeholder catalog shipped in MS0 — skill-spec validation
-(no skills/readable-code/SKILL.md yet), lint fixtures (no taorc-lint yet),
-and the installer/placement-matrix tests (no installers yet, MS5) are not
-implemented here for that reason.
+Checks whose subject does not exist yet are skipped rather than failed, so
+this runs clean against a tree partway through the milestones — skill-spec
+validation (no skills/readable-code/SKILL.md until MS3), lint fixtures (no
+taorc-lint until MS4), and the installer/placement-matrix tests (no
+installers until MS5) are not implemented here for that reason.
+
+The catalog itself is not among them. It has been required to be schema-valid
+since MS2 gave it a mandatory 'precedence' block, so the empty catalog that
+MS0's gate ran against no longer passes -- which is the intended outcome, as
+a catalog with no tiebreakers cannot resolve a conflict between two rules.
 """
 
 from __future__ import annotations

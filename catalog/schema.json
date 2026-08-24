@@ -4,7 +4,7 @@
   "title": "taorc rule catalog",
   "description": "Schema for catalog/rules.yaml, the registry of every taorc rule ID.",
   "type": "object",
-  "required": ["version", "rules"],
+  "required": ["version", "rules", "precedence"],
   "additionalProperties": false,
   "properties": {
     "version": {
@@ -14,6 +14,13 @@
     "rules": {
       "type": "array",
       "items": { "$ref": "#/$defs/rule" },
+      "uniqueItems": true
+    },
+    "precedence": {
+      "description": "Ordered tiebreakers resolving conflicts between rules (PRD R1.3). Order is significant: earlier entries win.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
       "uniqueItems": true
     }
   },

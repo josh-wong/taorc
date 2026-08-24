@@ -47,7 +47,13 @@ def load_catalog(path: Path | None = None) -> dict[str, Any]:
     with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if data is None:
-        data = {"version": 1, "rules": []}
+        data = {"version": 1}
+    # 'rules' is defaulted so callers can iterate it without guarding; the
+    # placeholder catalog shipped before MS1 legitimately had none. 'precedence'
+    # is deliberately NOT defaulted: injecting an empty list here would satisfy
+    # the schema's required-key check and leave a catalog with no tiebreakers
+    # reported only as a minItems failure -- and would hand any other caller a
+    # silently empty tiebreaker list instead of a KeyError.
     data.setdefault("rules", [])
     return data
 
