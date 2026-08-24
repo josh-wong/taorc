@@ -1,10 +1,12 @@
 name: Build and test
 
 on:
+  # Pull requests only; see the same note in lint.yaml. GitHub already runs
+  # this against the PR merged into its base, so a push trigger would repeat
+  # the drift check and the validation gate on every merge at double the cost.
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: build-and-test-${{ github.ref }}

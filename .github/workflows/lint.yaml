@@ -1,10 +1,17 @@
 name: Lint
 
 on:
+  # Pull requests only, deliberately. GitHub runs this against the PR merged
+  # into its base, so a push trigger would re-lint that same result a second
+  # time on every merge and double the Actions spend for no new signal. This
+  # is a private repo, where minutes are metered.
+  #
+  # The trade is that a commit pushed straight to main is not linted. Every
+  # change in this repo has gone through a PR, and workflow_dispatch covers
+  # checking main by hand when that is not true.
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: lint-${{ github.ref }}
