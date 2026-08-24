@@ -1,10 +1,29 @@
 name: Lint
 
 on:
+  # Pull requests only, deliberately. GitHub runs this against the PR merged
+  # into its base, so a push trigger would re-lint that same result a second
+  # time on every merge and double the Actions spend. This is a private repo,
+  # where minutes are metered.
+  #
+  # Three gaps this leaves, recorded here because an absent trigger explains
+  # nothing about itself:
+  #
+  #   1. A commit pushed straight to main is not linted. Every change here has
+  #      gone through a PR; workflow_dispatch covers checking main by hand.
+  #   2. The merge GitHub tests is the PR head merged into its base as of the
+  #      PR's last push. pull_request fires on head changes, not base changes,
+  #      so a base that moves afterwards is never re-checked -- and with no
+  #      push trigger, nothing checks the merge that actually landed. Branch
+  #      protection's "require branches to be up to date" is the usual fix and
+  #      is unavailable on this plan (it needs Pro or a public repo).
+  #   3. branches: [main] means a PR targeting a version branch does not run
+  #      this at all, which matters once auto-backport-pr.yaml starts opening
+  #      them. That gap predates this trigger change -- the push trigger it
+  #      replaced was also main-only -- so closing it is a separate decision.
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: lint-${{ github.ref }}
