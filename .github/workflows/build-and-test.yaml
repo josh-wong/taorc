@@ -1,10 +1,18 @@
 name: Build and test
 
 on:
+  # Pull requests only; lint.yaml carries the full note, including the three
+  # gaps this leaves. One of them lands harder here than there: two PRs that
+  # are each green alone can still break main together, because build.py
+  # derives every adapter from inputs that separate PRs touch independently --
+  # one editing catalog/rules.yaml, another templates/agent-block.md or
+  # VERSION. The drift check below is exactly what catches that, and with no
+  # push trigger it does not run on the merge result. Until branch protection
+  # is available, the mitigation is procedural: merge one PR at a time, and
+  # re-run this against the new main before merging the next.
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: build-and-test-${{ github.ref }}
