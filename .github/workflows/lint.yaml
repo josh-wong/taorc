@@ -35,6 +35,12 @@ jobs:
           src: "scripts/ evals/ skills/readable-code/scripts/"
 
       - name: Lint Markdown
-        uses: DavidAnson/markdownlint-cli2-action@v20
+        # Exact tag rather than the floating v20 major, for the same reason
+        # ruff is pinned above: this action bundles its own markdownlint-cli2
+        # build, so the tag decides the rule set. v20.0.0 bundles
+        # markdownlint-cli2 0.18.1 (markdownlint 0.38.0). Upgrading is a
+        # deliberate change, not something to inherit silently -- v24 adds
+        # MD060, which .markdownlint-cli2.jsonc already has an answer for.
+        uses: DavidAnson/markdownlint-cli2-action@v20.0.0
         with:
           globs: "**/*.md"
