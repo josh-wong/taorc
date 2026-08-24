@@ -7,9 +7,22 @@
 # ruff release adding a rule could turn CI red with no change to this repo.
 # The workflow now pins the version and this file pins the rules, so a lint
 # result is reproducible from the commit alone.
+#
+# One reading hazard: the bare tokens in `select` and `ignore` below are ruff
+# codes, never taorc catalog IDs, and the two namespaces overlap almost
+# completely -- `C4`, `F3`, `E1`, `N1`, `A1`, `B1` all name a rule in each.
+# Catalog IDs appear in this file only inside prose, and always as "catalog
+# rule X".
 
 target-version = "py310"  # AGENTS.md sets the floor at 3.10+; CI runs 3.12.
 line-length = 100
+
+# The workflow lints the whole repo so a .py file added anywhere is covered.
+# The lint fixtures are the exception: v1-design-doc.md §8.4 specifies them as
+# code that deliberately violates a rule so taorc-lint can be asserted against
+# it, which is precisely what ruff would report. extend-exclude, not exclude,
+# so ruff's own defaults stay in place.
+extend-exclude = ["lint/fixtures"]
 
 [lint]
 select = [
