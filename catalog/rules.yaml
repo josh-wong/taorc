@@ -1519,6 +1519,14 @@ rules:
     chapter: 13
     severity: warning
     lintable: false
+    exceptions: >
+      A library type is rarely an exact drop-in for the code it replaces, so
+      check the difference before making the swap. The example below is
+      typical: `Counter` returns zero for a key never seen, where the
+      hand-rolled dict raises, so any caller that relies on that raise changes
+      behavior. Where the two differ in a way the surrounding code depends on,
+      keep the explicit version; correctness comes first (`X4`, and the
+      catalog's first precedence entry).
     examples:
       - lang: python
         before: |

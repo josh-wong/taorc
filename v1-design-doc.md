@@ -284,13 +284,13 @@ Step 5 is load-bearing. Giving the agent a sanctioned way to *say* "I noticed `u
 Ten questions, ordered by how often agents fail them:
 
 1. Does any comment restate what the line below it does? Delete it. (C1)
-2. Does any comment narrate my own plan—"Step 1", "First, we"? Delete it. (C2, X7)
-3. Would a new reader know the unit of every number I named? (N7)
-4. Is any name an empty word—`data`, `result`, `handler`, `process`? (N1)
-5. Is any non-obvious decision left unexplained? Add the *why*. (C7)
-6. Can any nested block become a guard clause? (F4)
+2. Does any comment narrate my own plan—"Step 1", "First, we"? Delete it. (X7)
+3. Would a new reader know the unit of every number I named? (N3)
+4. Is any name an empty word—`data`, `result`—or a role word—`handler`, `manager`? (N1, N9)
+5. Is any non-obvious decision left unexplained? Add the *why*. (C6)
+6. Can any nested block become a guard clause? (F5, F6)
 7. Is any boolean expression more than three terms? (E1)
-8. Does any function do more than one thing my one-sentence description can cover? (S4)
+8. Does any function do more than one thing my one-sentence description can cover? (S3)
 9. Do my test names say the scenario and the expected result? (T3)
 10. Did I change anything the task did not require? (X1)
 
@@ -388,13 +388,13 @@ first existing path wins—`.claude/skills/readable-code/SKILL.md`,
 `skills/readable-code/SKILL.md`. Read it before non-trivial work.
 
 ### Always
-- Name the thing, not its shape. No `data`, `result`, `handler`, `helper`. (N1, N2)
-- Put the unit in the name: `timeoutSecs`, not `timeout`. (N7)
+- Name the thing, not its shape. No `data`, `result`, `handler`, `helper`. (N1, N9)
+- Put the unit in the name: `timeoutSecs`, not `timeout`. (N3)
 - Comment *why*, never *what*. If a comment restates the line below it, delete it. (C1)
-- No plan narration ("Step 1:"), no banner comments, no emoji in code. (C2, C3, C4)
-- Guard clauses over nesting. Handle the simple case first. (F2, F4)
+- No plan narration ("Step 1:"), no banner comments, no emoji in code. (X7, X8)
+- Guard clauses over nesting. Handle the simple case first. (F2, F5, F6)
 - More than three terms in a condition: name the parts. (E1)
-- One task per function. If describing it needs "and", split it. (S4)
+- One task per function. If describing it needs "and", split it. (S3)
 - Test names say the scenario and the expected result. (T3)
 
 ### Never
@@ -613,7 +613,7 @@ taorc_lint.py [paths...]
   --changed          lint files changed vs. the merge base (agent default)
   --format text|json
   --severity suggestion|warning|error   minimum reported
-  --rules C1,N7      subset
+  --rules C1,N3      subset
   --show-suppressed  list suppressed findings and their reasons
   --fail-on warning  exit non-zero at or above (default: never fail)
 ```

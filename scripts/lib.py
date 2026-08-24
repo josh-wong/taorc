@@ -48,12 +48,13 @@ def load_catalog(path: Path | None = None) -> dict[str, Any]:
         data = yaml.safe_load(f)
     if data is None:
         data = {"version": 1}
-    # Fill in every top-level key so callers can index the result without
-    # guarding. An empty catalog still fails schema validation -- 'precedence'
-    # requires at least one entry -- which is the intended outcome, since a
-    # catalog with no tiebreakers cannot resolve a conflict between rules.
+    # 'rules' is defaulted so callers can iterate it without guarding; the
+    # placeholder catalog shipped before MS1 legitimately had none. 'precedence'
+    # is deliberately NOT defaulted: injecting an empty list here would satisfy
+    # the schema's required-key check and leave a catalog with no tiebreakers
+    # reported only as a minItems failure -- and would hand any other caller a
+    # silently empty tiebreaker list instead of a KeyError.
     data.setdefault("rules", [])
-    data.setdefault("precedence", [])
     return data
 
 
