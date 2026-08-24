@@ -31,8 +31,14 @@ the comment stays where it was written.
 # Stops watching the file. This does not delete the file on disk.
 def unwatch(path): ...
 
+# Does not delete the file on disk.
 def stop_watching(path): ...
 ```
+
+Only the first sentence was the defect: it existed to translate `unwatch`, and
+the better name retires it. The second sentence survives, because it tells a
+caller something the name cannot (`C7`). Deleting it along with the first would
+be exactly the overcorrection `references/ai-code-tells.md` warns about.
 
 **`X7` — narrating your own plan.** "Step 1", "First, we", "Now we". These
 record the order you generated the code in, which is not something the reader

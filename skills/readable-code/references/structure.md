@@ -149,7 +149,11 @@ Check the difference before swapping, because a library type is rarely an exact
 drop-in. Here, `Counter` returns zero for a key never seen where the plain dict
 raises `KeyError` — so any caller relying on that raise changes behavior. Where
 the two differ in a way the surrounding code depends on, keep the explicit
-version. Correctness first (`X4`, precedence entry 1).
+version: precedence entry 1 puts correctness ahead of readability.
+
+Where the swap is worth making anyway, note that it is now a behavior change
+wearing a readability rule's clothes, so `X4` applies — it belongs in its own
+step, where a reviewer can see the behavior move.
 
 **`S9` — wrap an awkward interface.** When an API demands setup, returns a shape
 you have to convert, or takes parameters irrelevant to your use, write the small

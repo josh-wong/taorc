@@ -139,14 +139,20 @@ nested loop, though, echo the collection being indexed, because that is where
 the mistake actually happens.
 
 ```java
-for (int i = 0; i < rows.size(); i++)
-    for (int j = 0; j < cols.size(); j++)
-        if (grid[i][j] == target) matches.add(rows[j]);   // bug, and invisible
+for (int i = 0; i < rows.length; i++)
+    for (int j = 0; j < cols.length; j++)
+        if (grid[i][j] == target) matches.add(rows[j]);
 
-for (int ri = 0; ri < rows.size(); ri++)
-    for (int ci = 0; ci < cols.size(); ci++)
-        if (grid[ri][ci] == target) matches.add(rows[ci]); // mismatch is obvious
+for (int ri = 0; ri < rows.length; ri++)
+    for (int ci = 0; ci < cols.length; ci++)
+        if (grid[ri][ci] == target) matches.add(rows[ci]);
 ```
+
+Both blocks contain the same bug: `rows` is indexed with a column index. The
+second block is not the fix — it is the same defect made visible. `rows[j]`
+looks like every other line of loop code, while `rows[ci]` reads as wrong on
+sight, because the index name says which axis it belongs to. The correction is
+`rows[ri]`, and the naming is what makes anyone notice it needs correcting.
 
 `N7` follows the project's conventions for capitalization and separators, so the
 form of a name tells a reader what kind of thing it is. `N15` respects the

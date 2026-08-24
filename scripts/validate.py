@@ -230,32 +230,46 @@ def check_version_sync(version: str) -> list[str]:
 
 
 def _parse_frontmatter(text: str) -> dict | None:
-    """The YAML frontmatter block, or None if the file has no well-formed one."""
+    """The YAML frontmatter block, or None if the file has no well-formed one.
+
+    Malformed YAML returns None rather than propagating: this gate's job is to
+    report what is wrong with the file, and a traceback out of here would take
+    down the checks that run after it as well.
+    """
     if not text.startswith("---\n"):
         return None
     end = text.find("\n---\n", 3)
     if end == -1:
         return None
-    parsed = yaml.safe_load(text[4 : end + 1])
+    try:
+        parsed = yaml.safe_load(text[4 : end + 1])
+    except yaml.YAMLError:
+        return None
     return parsed if isinstance(parsed, dict) else None
 
 
-def check_skill_spec() -> list[str]:
+def check_skill_spec(version: str) -> list[str]:
     """The parts of §9's skill-spec check that need no external tool.
 
     `skills-ref validate` covers the full Agent Skills spec and is not run
     here; what this adds is the half that is cheap and that CI would otherwise
     never see -- that the frontmatter parses, that 'name' matches the directory
     (the spec requires it, and an installer that resolves a skill by directory
-    would silently install one named something else), and that every reference
-    SKILL.md points at actually exists. A dangling pointer costs an agent a
-    failed read at the exact moment it decided it needed the file.
+    would silently install one named something else), that the description is a
+    string within the spec's length limit, that metadata.version tracks VERSION,
+    and that every reference SKILL.md points at actually exists. A dangling
+    pointer costs an agent a failed read at the exact moment it decided it
+    needed the file.
     """
     errors = []
     skill_dir = REPO_ROOT / "skills" / "readable-code"
     skill_md = skill_dir / "SKILL.md"
+    # A hard error, not a milestone skip. The file has existed since MS3, and
+    # check_budgets also skips a missing path -- so treating its absence as
+    # "nothing to check" would let a deleted or renamed skill directory take
+    # the token and line budgets down with it, silently, on a green run.
     if not skill_md.exists():
-        return errors
+        return ["skills/readable-code/SKILL.md: missing"]
 
     text = skill_md.read_text(encoding="utf-8")
     frontmatter = _parse_frontmatter(text)
@@ -272,10 +286,27 @@ def check_skill_spec() -> list[str]:
     description = frontmatter.get("description")
     if not description:
         errors.append("skills/readable-code/SKILL.md: frontmatter has no description")
+    elif not isinstance(description, str):
+        # An unquoted description that parses as a number or a list is still a
+        # broken description; say so rather than raising on len().
+        errors.append(
+            f"skills/readable-code/SKILL.md: description parsed as "
+            f"{type(description).__name__}, not a string"
+        )
     elif len(description) > SKILL_DESCRIPTION_LIMIT:
         errors.append(
             f"skills/readable-code/SKILL.md: description is {len(description)} characters, "
             f"over the {SKILL_DESCRIPTION_LIMIT}-character spec limit"
+        )
+
+    # Nothing else covers this. check_version_sync reads the four manifests and
+    # the managed-block markers, and build.py never writes SKILL.md, so without
+    # this a VERSION bump leaves the shipped skill advertising the old one.
+    skill_version = (frontmatter.get("metadata") or {}).get("version")
+    if skill_version != version:
+        errors.append(
+            f"skills/readable-code/SKILL.md: metadata.version {skill_version!r} "
+            f"does not match VERSION ({version!r})"
         )
 
     for reference in sorted(set(re.findall(r"references/([\w-]+\.md)", text))):
@@ -303,7 +334,7 @@ def main() -> int:
         all_errors += check_lint_rule_files(catalog)
         all_errors += check_referential_integrity(catalog)
 
-    all_errors += check_skill_spec()
+    all_errors += check_skill_spec(version)
     all_errors += check_budgets(version)
     all_errors += check_version_sync(version)
 

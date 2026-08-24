@@ -37,9 +37,11 @@ your judgment, which is why this file exists.
 | Test named `test_1`, `test_basic`, `test_works`       | `T3`  | ✓    | Name the scenario and the expectation                |
 | Hedging comment: "This should probably..."            | `C13` |      | Decide, or file a real `TODO`                        |
 
-`N11` (negated boolean name) is the ninth lint rule and has no row here. It is
-an ordinary naming defect rather than a generative habit, so it earns a lint
-rule without earning a place in this file.
+The Lint column marks eight of `taorc-lint`'s nine rules; the banner and emoji
+rows share `X8`, which is why nine check marks cover eight rules. The ninth,
+`N11` (negated boolean name), has no row here at all: it is an ordinary naming
+defect rather than a generative habit, so it earns a lint rule without earning
+a place in this file.
 
 Three of the most recognizable tells — plan narration, banner comments, and
 emoji — land on `X` rules rather than book-derived ones. They are habits only a
@@ -98,7 +100,7 @@ says what the value *is*.
 
 ```python
 data = fetch(url)                 # -> subscriptions
-result = [d for d in data if ...] # -> expiringSoon
+result = [d for d in data if ...] # -> expiring_soon
 ```
 
 Where the value genuinely has no better name than its role — a loop variable in

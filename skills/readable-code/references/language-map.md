@@ -13,14 +13,14 @@ differs from what this file says, the project wins.
 
 ## Where the idiom differs
 
-| Rule  | Python                        | TypeScript / JavaScript    | Go                              | Rust                            | Java / C#                       |
-| ----- | ----------------------------- | -------------------------- | ------------------------------- | ------------------------------- | ------------------------------- |
-| `N7`  | `snake_case`, `UPPER` consts  | `camelCase`, `PascalCase`  | `MixedCaps`; case sets export   | `snake_case`, `CamelCase` types | `camelCase`, `PascalCase`       |
-| `N10` | `is_`/`has_` prefix           | `is`/`has`/`should` prefix | often a bare adjective: `ok`    | `is_`/`has_`, or bare adjective | `is`/`has`; C# also `Can`       |
-| `E4`  | `if items:`                   | `if (items.length)`        | `if len(items) > 0` is idiom    | `if !items.is_empty()`          | `if (items.isEmpty())` inverted |
-| `V4`  | no binding-level `const`      | `const` by default         | no `const` for locals; reassign | `let` is immutable by default   | `final` / `readonly` where apt  |
-| `F5`  | guard clause + `raise`        | guard clause + `throw`     | `if err != nil { return ... }`  | `?` operator                    | guard clause + `throw`          |
-| `C14` | docstring, first line summary | JSDoc `/** ... */`         | `// FuncName ...` godoc form    | `///` rustdoc, `# Examples`     | Javadoc / XML doc comments      |
+| Rule  | Python                        | TypeScript / JavaScript    | Go                                   | Rust                            | Java / C#                       |
+| ----- | ----------------------------- | -------------------------- | ------------------------------------ | ------------------------------- | ------------------------------- |
+| `N7`  | `snake_case`, `UPPER` consts  | `camelCase`, `PascalCase`  | `MixedCaps`; case sets export        | `snake_case`, `CamelCase` types | `camelCase`, `PascalCase`       |
+| `N10` | `is_`/`has_` prefix           | `is`/`has`/`should` prefix | often a bare adjective: `ok`         | `is_`/`has_`, or bare adjective | `is`/`has`; C# also `Can`       |
+| `E4`  | `if items:`                   | `if (items.length)`        | `if len(items) > 0` is idiom         | `if !items.is_empty()`          | `if (items.isEmpty())` inverted |
+| `V4`  | no binding-level `const`      | `const` by default         | `const` only for compile-time values | `let` is immutable by default   | `final` / `readonly` where apt  |
+| `F5`  | guard clause + `raise`        | guard clause + `throw`     | `if err != nil { return ... }`       | `?` operator                    | guard clause + `throw`          |
+| `C14` | docstring, first line summary | JSDoc `/** ... */`         | `// FuncName ...` godoc form         | `///` rustdoc, `# Examples`     | Javadoc / XML doc comments      |
 
 ## Go
 
