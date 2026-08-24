@@ -72,11 +72,18 @@ def count_tokens(text: str) -> int:
 
         encoding = tiktoken.get_encoding("cl100k_base")
         return len(encoding.encode(text))
-    except Exception as exc:
+    # The blind catch is deliberate (hence the noqa): tiktoken can fail in more
+    # ways than it documents -- missing, or unable to fetch its encoding on a
+    # machine with no network -- and none of them should take down a validation
+    # run that has a workable fallback.
+    except Exception as exc:  # noqa: BLE001
         # Printed rather than swallowed: a budget check that passes/fails near
         # the boundary should be traceable to "tiktoken was unavailable here"
         # rather than looking like a silent, unexplained verdict change.
-        print(f"count_tokens: tiktoken unavailable ({exc!r}), using char-based estimate", file=sys.stderr)
+        print(
+            f"count_tokens: tiktoken unavailable ({exc!r}), using char-based estimate",
+            file=sys.stderr,
+        )
         return max(1, int(len(text) // 2.5))
 
 

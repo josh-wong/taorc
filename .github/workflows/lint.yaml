@@ -22,11 +22,51 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Lint Python
-        uses: astral-sh/ruff-action@v3
+        id: ruff
+        # Exact tag rather than the floating v3 major, for the same reason the
+        # markdownlint action is pinned below. This step also leans on how the
+        # action builds its command line -- it runs `ruff <args> <src>` -- so a
+        # v3.x that reorders those would change what CI lints with no change
+        # here.
+        uses: astral-sh/ruff-action@v3.6.1
         with:
-          args: check scripts/ evals/ skills/readable-code/scripts/
+          # Pinned to the same version requirements-dev.txt installs, so a
+          # local run and a CI run agree. Without this the action takes the
+          # newest release at run time and a ruff release can turn CI red on
+          # its own. The rule set is pinned separately, in ruff.toml.
+          version-file: requirements-dev.txt
+          # Paths belong in src, not args, because the action appends src after
+          # args -- passing them as args would lint these paths and then the
+          # whole workspace on top. Scope stays the whole repo so that a .py
+          # file added anywhere is linted by default; ruff.toml excludes the
+          # lint fixtures, which are the one tree meant to violate rules.
+          src: "."
+
+      - name: Verify the installed ruff matches the pin
+        # version-file degrades quietly. If requirements-dev.txt is renamed, or
+        # its ruff line moves to a constraints file, the action logs a warning,
+        # installs the newest release, and the job still passes -- restoring the
+        # exact unpinned behavior the pin exists to prevent. Assert instead.
+        run: |
+          pinned="$(sed -n 's/^ruff==\([0-9][0-9.]*\)[[:space:]]*$/\1/p' requirements-dev.txt)"
+          installed="${{ steps.ruff.outputs.ruff-version }}"
+          if [ -z "$pinned" ]; then
+            echo "requirements-dev.txt has no 'ruff==<version>' line, so version-file pins nothing." >&2
+            exit 1
+          fi
+          if [ "$pinned" != "$installed" ]; then
+            echo "ruff $installed ran, but requirements-dev.txt pins $pinned." >&2
+            exit 1
+          fi
+          echo "ruff $installed matches the requirements-dev.txt pin."
 
       - name: Lint Markdown
-        uses: DavidAnson/markdownlint-cli2-action@v20
+        # Exact tag rather than the floating v20 major, for the same reason
+        # ruff is pinned above: this action bundles its own markdownlint-cli2
+        # build, so the tag decides the rule set. v20.0.0 bundles
+        # markdownlint-cli2 0.18.1 (markdownlint 0.38.0). Upgrading is a
+        # deliberate change, not something to inherit silently -- v24 adds
+        # MD060, which .markdownlint-cli2.jsonc already has an answer for.
+        uses: DavidAnson/markdownlint-cli2-action@v20.0.0
         with:
           globs: "**/*.md"

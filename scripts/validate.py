@@ -51,8 +51,10 @@ CITATION_ROOTS = ["skills/readable-code", "prompts", "templates", "evals"]
 def check_schema(catalog: dict) -> list[str]:
     schema = json.loads((REPO_ROOT / "catalog" / "schema.json").read_text(encoding="utf-8"))
     validator = jsonschema.Draft202012Validator(schema)
-    errors = [f"catalog/rules.yaml: {e.message} (at {list(e.path)})" for e in validator.iter_errors(catalog)]
-    return errors
+    return [
+        f"catalog/rules.yaml: {e.message} (at {list(e.path)})"
+        for e in validator.iter_errors(catalog)
+    ]
 
 
 def check_schema_prefix_sync() -> list[str]:
@@ -63,13 +65,17 @@ def check_schema_prefix_sync() -> list[str]:
     id_pattern = schema["$defs"]["rule"]["properties"]["id"]["pattern"]
     match = re.match(r"\^\[([A-Z]+)\]", id_pattern)
     if not match:
-        return [f"catalog/schema.json: id pattern {id_pattern!r} is not in the expected ^[...] form"]
+        return [
+            f"catalog/schema.json: id pattern {id_pattern!r} is not in the expected ^[...] form"
+        ]
     schema_prefixes = "".join(sorted(match.group(1)))
     lib_prefixes = "".join(sorted(RULE_ID_PREFIX_CLASS))
     if schema_prefixes != lib_prefixes:
         return [
-            f"catalog/schema.json: id pattern prefixes {schema_prefixes!r} do not match "
-            f"lib.CATEGORY_PREFIXES {lib_prefixes!r}"
+            (
+                f"catalog/schema.json: id pattern prefixes {schema_prefixes!r} do not match "
+                f"lib.CATEGORY_PREFIXES {lib_prefixes!r}"
+            )
         ]
     return []
 
@@ -139,7 +145,9 @@ def check_referential_integrity(catalog: dict) -> list[str]:
         cited = find_rule_ids(text)
         missing = {r["id"] for r in catalog["rules"] if not r.get("deprecated")} - cited
         if missing:
-            errors.append(f"skills/readable-code/SKILL.md: missing catalog rule id(s) {sorted(missing)}")
+            errors.append(
+                f"skills/readable-code/SKILL.md: missing catalog rule id(s) {sorted(missing)}"
+            )
 
     return errors
 
@@ -153,14 +161,17 @@ def check_budgets(version: str) -> list[str]:
         text = path.read_text(encoding="utf-8")
         # The agent-block template is measured as build.py renders it (with
         # its begin/end markers) so the two scripts check the same content.
-        measured_text = render_managed_block(version, text) if relative_path == "templates/agent-block.md" else text
+        is_agent_block = relative_path == "templates/agent-block.md"
+        measured_text = render_managed_block(version, text) if is_agent_block else text
         tokens = count_tokens(measured_text)
         if tokens > budget:
             errors.append(f"{relative_path}: {tokens} tokens exceeds budget of {budget}")
         if relative_path.endswith("SKILL.md"):
             line_count = len(text.splitlines())
             if line_count > SKILL_MD_LINE_LIMIT:
-                errors.append(f"{relative_path}: {line_count} lines exceeds limit of {SKILL_MD_LINE_LIMIT}")
+                errors.append(
+                    f"{relative_path}: {line_count} lines exceeds limit of {SKILL_MD_LINE_LIMIT}"
+                )
     return errors
 
 
@@ -178,7 +189,9 @@ def check_version_sync(version: str) -> list[str]:
         current_version = read_manifest_version(manifest_path)
         if current_version != version:
             rel = manifest_path.relative_to(REPO_ROOT)
-            errors.append(f"{rel}: version {current_version!r} does not match VERSION ({version!r})")
+            errors.append(
+                f"{rel}: version {current_version!r} does not match VERSION ({version!r})"
+            )
 
     # Derived from build.BLOCK_BEGIN so the two never drift apart.
     marker_pattern = re.compile(re.escape(BLOCK_BEGIN).replace(r"\{version\}", r"([\d.]+)"))
@@ -230,7 +243,8 @@ def main() -> int:
             print(f"  - {error}", file=sys.stderr)
         return 1
 
-    print(f"validate.py: all checks passed ({len(catalog['rules'])} rule(s) in catalog, v{version}).")
+    rule_count = len(catalog["rules"])
+    print(f"validate.py: all checks passed ({rule_count} rule(s) in catalog, v{version}).")
     return 0
 
 
