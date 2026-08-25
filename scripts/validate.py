@@ -24,6 +24,7 @@ a catalog with no tiebreakers cannot resolve a conflict between two rules.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import shutil
@@ -240,6 +241,77 @@ def check_referential_integrity(catalog: dict) -> list[str]:
     return errors
 
 
+def check_linter_referential_integrity(catalog: dict) -> list[str]:
+    """AGENTS.md: any ID cited in "SKILL.md, a reference file, the linter, or
+    an eval scorer" must already exist in the catalog. check_referential_integrity
+    only walks *.md files, so a stale or typo'd id inside taorc_lint.py's
+    CATALOG_SEVERITY/CATALOG_SLUG dicts, or inside an ast-grep rule .yml's
+    message, would otherwise pass CI silently.
+    """
+    errors = []
+    known_ids = {rule["id"] for rule in catalog["rules"]}
+
+    linter_path = (
+        REPO_ROOT / "skills" / "readable-code" / "scripts" / "taorc_lint.py"
+    )
+    if linter_path.exists():
+        text = linter_path.read_text(encoding="utf-8")
+        cited = set(re.findall(rf'"([{RULE_ID_PREFIX_CLASS}][0-9]+)"\s*:', text))
+        unknown = cited - known_ids
+        if unknown:
+            rel = linter_path.relative_to(REPO_ROOT)
+            errors.append(f"{rel}: cites unknown rule id(s) {sorted(unknown)}")
+
+    rules_dir = REPO_ROOT / "skills" / "readable-code" / "scripts" / "rules"
+    if rules_dir.exists():
+        for yml_file in sorted(rules_dir.rglob("*.yml")):
+            text = yml_file.read_text(encoding="utf-8")
+            cited = set(re.findall(rf'\[([{RULE_ID_PREFIX_CLASS}][0-9]+)\]', text))
+            unknown = cited - known_ids
+            if unknown:
+                rel = yml_file.relative_to(REPO_ROOT)
+                errors.append(f"{rel}: cites unknown rule id(s) {sorted(unknown)}")
+
+    return errors
+
+
+def check_lint_severity_sync(catalog: dict) -> list[str]:
+    """v1-design-doc.md §8.2 claims "§3.1 requires the two to agree and CI
+    asserts it" for catalog vs. linter severity. Rule .yml files hardcode
+    severity: warning (ast-grep has no "suggestion" level -- see
+    taorc_lint.py's CATALOG_SEVERITY comment), so the only place severity can
+    actually drift from the catalog is that table; this loads it and diffs it
+    against catalog/rules.yaml.
+    """
+    errors = []
+    linter_path = (
+        REPO_ROOT / "skills" / "readable-code" / "scripts" / "taorc_lint.py"
+    )
+    if not linter_path.exists():
+        return errors
+
+    spec = importlib.util.spec_from_file_location("taorc_lint", linter_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    for rule in catalog["rules"]:
+        if not rule.get("lintable"):
+            continue
+        rule_id = rule["id"]
+        linter_severity = module.CATALOG_SEVERITY.get(rule_id)
+        if linter_severity is None:
+            errors.append(
+                f"skills/readable-code/scripts/taorc_lint.py: CATALOG_SEVERITY "
+                f"is missing lintable rule {rule_id}"
+            )
+        elif linter_severity != rule["severity"]:
+            errors.append(
+                f"skills/readable-code/scripts/taorc_lint.py: CATALOG_SEVERITY[{rule_id!r}] "
+                f"is {linter_severity!r}, catalog/rules.yaml says {rule['severity']!r}"
+            )
+    return errors
+
+
 def check_budgets(version: str) -> list[str]:
     errors = []
     for relative_path, budget in BUDGETS.items():
@@ -419,6 +491,8 @@ def main() -> int:
         all_errors += check_lint_rule_files(catalog)
         all_errors += check_lint_fixtures(catalog)
         all_errors += check_referential_integrity(catalog)
+        all_errors += check_linter_referential_integrity(catalog)
+        all_errors += check_lint_severity_sync(catalog)
 
     all_errors += check_skill_spec(version)
     all_errors += check_budgets(version)

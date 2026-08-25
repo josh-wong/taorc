@@ -9,7 +9,7 @@ rule:
     - has:
         field: name
         kind: identifier
-        regex: '(delay|timeout|elapsed|duration|interval|expiry|ttl|size|length|limit)$'
+        regex: '(?i)(delay|timeout|elapsed|duration|interval|expiry|ttl|size|length|limit)$'
     - has:
         field: value
         kind: number

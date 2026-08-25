@@ -209,9 +209,12 @@ def drop_n1_in_short_python_functions(findings: list[Finding]) -> list[Finding]:
             kept.append(f)
             continue
         if f.file not in ranges_by_file:
-            ranges_by_file[f.file] = short_python_function_ranges(
-                Path(f.file).read_text(encoding="utf-8")
-            )
+            try:
+                source = Path(f.file).read_text(encoding="utf-8")
+            except OSError:
+                ranges_by_file[f.file] = []
+            else:
+                ranges_by_file[f.file] = short_python_function_ranges(source)
         if any(start <= f.line <= end for start, end in ranges_by_file[f.file]):
             continue
         kept.append(f)
@@ -286,8 +289,13 @@ def score_c1_candidates(c1_candidates: list[dict[str, Any]]) -> list[Finding]:
             continue  # a trailing comment on a code line, not a standalone one
 
         if file not in source_lines_by_file:
-            source_lines_by_file[file] = Path(file).read_text(encoding="utf-8").splitlines()
+            try:
+                source_lines_by_file[file] = Path(file).read_text(encoding="utf-8").splitlines()
+            except OSError:
+                source_lines_by_file[file] = []
         lines = source_lines_by_file[file]
+        if not lines:
+            continue
 
         start = match["range"]["start"]
         statement = next_statement_line(lines, start["line"])
@@ -475,7 +483,7 @@ def main() -> int:
     findings += score_c1_candidates(c1_candidates)
     findings = drop_n1_in_short_python_functions(findings)
 
-    suppressions, malformed = collect_suppressions({f.file for f in findings})
+    suppressions, malformed = collect_suppressions({str(p) for p in target_files})
     findings, suppressed = apply_suppressions(findings, suppressions)
     findings += malformed
 
