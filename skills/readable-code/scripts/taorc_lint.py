@@ -139,7 +139,10 @@ def find_ast_grep() -> str | None:
 def stem(word: str) -> str:
     for suffix in STEM_SUFFIXES:
         if word.endswith(suffix) and len(word) - len(suffix) >= 2:
-            return word[: -len(suffix)]
+            word = word[: -len(suffix)]
+            break
+    if word.endswith("e") and len(word) >= 3:
+        word = word[:-1]
     return word
 
 
@@ -268,6 +271,11 @@ def build_findings(matches: list[dict[str, Any]]) -> tuple[list[Finding], list[d
         if catalog_id == "C1":
             c1_candidates.append(match)
             continue
+        if catalog_id not in CATALOG_SEVERITY:
+            raise KeyError(
+                f"{catalog_id} has an ast-grep rule but no entry in CATALOG_SEVERITY"
+            )
+
         start = match["range"]["start"]
         findings.append(
             Finding(
@@ -293,6 +301,8 @@ def score_c1_candidates(c1_candidates: list[dict[str, Any]]) -> list[Finding]:
         file = match["file"]
         if not COMMENT_PREFIX.match(match["lines"]):
             continue  # a trailing comment on a code line, not a standalone one
+        if SUPPRESSION.search(match["lines"]):
+            continue  # a suppression directive, not code narration
 
         if file not in source_lines_by_file:
             try:

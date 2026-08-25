@@ -194,6 +194,12 @@ def check_lint_fixtures(catalog: dict) -> list[str]:
         text=True,
         check=False,
     )
+    if completed.returncode != 0:
+        errors.append(
+            f"lint/fixtures: taorc_lint.py exited with status "
+            f"{completed.returncode} ({completed.stderr.strip()})"
+        )
+        return errors
     try:
         findings = json.loads(completed.stdout or "[]")
     except json.JSONDecodeError:
@@ -255,6 +261,12 @@ def check_suppression_fixtures() -> list[str]:
             text=True,
             check=False,
         )
+        if completed.returncode != 0:
+            errors.append(
+                f"lint/fixtures/suppression/{filename}: taorc_lint.py exited "
+                f"with status {completed.returncode} ({completed.stderr.strip()})"
+            )
+            continue
         try:
             findings = json.loads(completed.stdout or "[]")
         except json.JSONDecodeError:
@@ -273,32 +285,40 @@ def check_suppression_fixtures() -> list[str]:
     fixture = SUPPRESSION_FIXTURES_ROOT / "missing_reason.py"
     if not fixture.exists():
         errors.append("lint/fixtures/suppression/missing_reason.py: missing fixture")
-    else:
-        completed = subprocess.run(
-            [sys.executable, str(LINT_SCRIPT), "--format", "json", str(fixture)],
-            capture_output=True,
-            text=True,
-            check=False,
+        return errors
+
+    completed = subprocess.run(
+        [sys.executable, str(LINT_SCRIPT), "--format", "json", str(fixture)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        errors.append(
+            f"lint/fixtures/suppression/missing_reason.py: taorc_lint.py "
+            f"exited with status {completed.returncode} ({completed.stderr.strip()})"
         )
-        try:
-            findings = json.loads(completed.stdout or "[]")
-        except json.JSONDecodeError:
-            errors.append(
-                f"lint/fixtures/suppression/missing_reason.py: taorc_lint.py did "
-                f"not produce valid JSON ({completed.stderr.strip()})"
-            )
-        else:
-            ids = {f["id"] for f in findings}
-            if "N1" not in ids:
-                errors.append(
-                    "lint/fixtures/suppression/missing_reason.py: expected N1 to "
-                    "still fire, since its suppression comment has no reason"
-                )
-            if "taorc-lint" not in ids:
-                errors.append(
-                    "lint/fixtures/suppression/missing_reason.py: expected a "
-                    "taorc-lint finding flagging the missing reason"
-                )
+        return errors
+    try:
+        findings = json.loads(completed.stdout or "[]")
+    except json.JSONDecodeError:
+        errors.append(
+            f"lint/fixtures/suppression/missing_reason.py: taorc_lint.py did "
+            f"not produce valid JSON ({completed.stderr.strip()})"
+        )
+        return errors
+
+    ids = {f["id"] for f in findings}
+    if "N1" not in ids:
+        errors.append(
+            "lint/fixtures/suppression/missing_reason.py: expected N1 to "
+            "still fire, since its suppression comment has no reason"
+        )
+    if "taorc-lint" not in ids:
+        errors.append(
+            "lint/fixtures/suppression/missing_reason.py: expected a "
+            "taorc-lint finding flagging the missing reason"
+        )
 
     return errors
 
