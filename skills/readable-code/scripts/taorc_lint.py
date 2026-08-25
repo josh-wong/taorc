@@ -19,7 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -137,7 +137,7 @@ def find_ast_grep() -> str | None:
     return shutil.which("ast-grep") or shutil.which("sg")
 
 
-@lru_cache(maxsize=None)
+@cache
 def _read_source(file: str) -> str:
     """Reads a target file once and shares the result across every check
     that needs it (C1 scoring, N1's short-function exclusion, suppression
@@ -148,7 +148,7 @@ def _read_source(file: str) -> str:
         return ""
 
 
-@lru_cache(maxsize=None)
+@cache
 def _read_lines(file: str) -> list[str]:
     return _read_source(file).splitlines()
 

@@ -30,7 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 
 import jsonschema
@@ -375,7 +375,7 @@ def check_linter_referential_integrity(catalog: dict) -> list[str]:
     return errors
 
 
-@lru_cache(maxsize=None)
+@cache
 def _load_lint_module():
     """Imports taorc_lint.py directly so the sync checks below can read its
     module-level tables (CATALOG_SEVERITY, CATALOG_SLUG, LANGUAGE_BY_SUFFIX)
