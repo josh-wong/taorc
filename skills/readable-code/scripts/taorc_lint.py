@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -136,6 +137,22 @@ def find_ast_grep() -> str | None:
     return shutil.which("ast-grep") or shutil.which("sg")
 
 
+@lru_cache(maxsize=None)
+def _read_source(file: str) -> str:
+    """Reads a target file once and shares the result across every check
+    that needs it (C1 scoring, N1's short-function exclusion, suppression
+    collection), instead of each one re-reading the same file from disk."""
+    try:
+        return Path(file).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+@lru_cache(maxsize=None)
+def _read_lines(file: str) -> list[str]:
+    return _read_source(file).splitlines()
+
+
 def stem(word: str) -> str:
     for suffix in STEM_SUFFIXES:
         if word.endswith(suffix) and len(word) - len(suffix) >= 2:
@@ -218,12 +235,7 @@ def drop_n1_in_short_python_functions(findings: list[Finding]) -> list[Finding]:
             kept.append(f)
             continue
         if f.file not in ranges_by_file:
-            try:
-                source = Path(f.file).read_text(encoding="utf-8")
-            except OSError:
-                ranges_by_file[f.file] = []
-            else:
-                ranges_by_file[f.file] = short_python_function_ranges(source)
+            ranges_by_file[f.file] = short_python_function_ranges(_read_source(f.file))
         if any(start <= f.line <= end for start, end in ranges_by_file[f.file]):
             continue
         kept.append(f)
@@ -295,7 +307,6 @@ def build_findings(matches: list[dict[str, Any]]) -> tuple[list[Finding], list[d
 
 def score_c1_candidates(c1_candidates: list[dict[str, Any]]) -> list[Finding]:
     findings = []
-    source_lines_by_file: dict[str, list[str]] = {}
 
     for match in c1_candidates:
         file = match["file"]
@@ -304,12 +315,7 @@ def score_c1_candidates(c1_candidates: list[dict[str, Any]]) -> list[Finding]:
         if SUPPRESSION.search(match["lines"]):
             continue  # a suppression directive, not code narration
 
-        if file not in source_lines_by_file:
-            try:
-                source_lines_by_file[file] = Path(file).read_text(encoding="utf-8").splitlines()
-            except OSError:
-                source_lines_by_file[file] = []
-        lines = source_lines_by_file[file]
+        lines = _read_lines(file)
         if not lines:
             continue
 
@@ -343,9 +349,8 @@ def collect_suppressions(paths: set[str]) -> tuple[dict[tuple[str, int, str], st
     malformed: list[Finding] = []
 
     for file in paths:
-        try:
-            lines = Path(file).read_text(encoding="utf-8").splitlines()
-        except OSError:
+        lines = _read_lines(file)
+        if not lines:
             continue
         for index, line in enumerate(lines):
             match = SUPPRESSION.search(line)

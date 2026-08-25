@@ -24,11 +24,13 @@ a catalog with no tiebreakers cannot resolve a conflict between two rules.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import shutil
 import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 import jsonschema
@@ -237,6 +239,10 @@ def check_suppression_fixtures() -> list[str]:
     -next line-offset math or malformed-reason detection fails CI instead of
     shipping silently.
 
+    All fixtures are linted in a single taorc_lint.py invocation (findings
+    are grouped back to their fixture by the "file" field), for the same
+    reason check_lint_fixtures batches its own fixture set.
+
     Skipped, not failed, when ast-grep isn't on PATH -- see check_lint_fixtures.
     """
     if shutil.which("ast-grep") is None and shutil.which("sg") is None:
@@ -249,76 +255,62 @@ def check_suppression_fixtures() -> list[str]:
         "next_line_blank_gap.py",
         "next_line_comment_gap.py",
     ]
-    for filename in suppressed_cases:
+    missing_reason_case = "missing_reason.py"
+
+    expected: list[Path] = []
+    for filename in [*suppressed_cases, missing_reason_case]:
         fixture = SUPPRESSION_FIXTURES_ROOT / filename
         if not fixture.exists():
             errors.append(f"lint/fixtures/suppression/{filename}: missing fixture")
             continue
+        expected.append(fixture)
 
-        completed = subprocess.run(
-            [sys.executable, str(LINT_SCRIPT), "--rules", "N1", "--format", "json", str(fixture)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            errors.append(
-                f"lint/fixtures/suppression/{filename}: taorc_lint.py exited "
-                f"with status {completed.returncode} ({completed.stderr.strip()})"
-            )
-            continue
-        try:
-            findings = json.loads(completed.stdout or "[]")
-        except json.JSONDecodeError:
-            errors.append(
-                f"lint/fixtures/suppression/{filename}: taorc_lint.py did not "
-                f"produce valid JSON ({completed.stderr.strip()})"
-            )
-            continue
-
-        if findings:
-            errors.append(
-                f"lint/fixtures/suppression/{filename}: expected N1 to be "
-                f"suppressed here, but it fired"
-            )
-
-    fixture = SUPPRESSION_FIXTURES_ROOT / "missing_reason.py"
-    if not fixture.exists():
-        errors.append("lint/fixtures/suppression/missing_reason.py: missing fixture")
+    if not expected:
         return errors
 
     completed = subprocess.run(
-        [sys.executable, str(LINT_SCRIPT), "--format", "json", str(fixture)],
+        [sys.executable, str(LINT_SCRIPT), "--format", "json", *(str(f) for f in expected)],
         capture_output=True,
         text=True,
         check=False,
     )
     if completed.returncode != 0:
         errors.append(
-            f"lint/fixtures/suppression/missing_reason.py: taorc_lint.py "
-            f"exited with status {completed.returncode} ({completed.stderr.strip()})"
+            f"lint/fixtures/suppression: taorc_lint.py exited with status "
+            f"{completed.returncode} ({completed.stderr.strip()})"
         )
         return errors
     try:
         findings = json.loads(completed.stdout or "[]")
     except json.JSONDecodeError:
         errors.append(
-            f"lint/fixtures/suppression/missing_reason.py: taorc_lint.py did "
-            f"not produce valid JSON ({completed.stderr.strip()})"
+            f"lint/fixtures/suppression: taorc_lint.py did not produce valid "
+            f"JSON ({completed.stderr.strip()})"
         )
         return errors
 
-    ids = {f["id"] for f in findings}
-    if "N1" not in ids:
-        errors.append(
-            "lint/fixtures/suppression/missing_reason.py: expected N1 to "
-            "still fire, since its suppression comment has no reason"
-        )
-    if "taorc-lint" not in ids:
-        errors.append(
-            "lint/fixtures/suppression/missing_reason.py: expected a "
-            "taorc-lint finding flagging the missing reason"
-        )
+    ids_by_file: dict[str, set[str]] = {}
+    for finding in findings:
+        ids_by_file.setdefault(finding["file"], set()).add(finding["id"])
+
+    for fixture in expected:
+        ids = ids_by_file.get(str(fixture), set())
+        if fixture.name == missing_reason_case:
+            if "N1" not in ids:
+                errors.append(
+                    f"lint/fixtures/suppression/{fixture.name}: expected N1 to "
+                    "still fire, since its suppression comment has no reason"
+                )
+            if "taorc-lint" not in ids:
+                errors.append(
+                    f"lint/fixtures/suppression/{fixture.name}: expected a "
+                    "taorc-lint finding flagging the missing reason"
+                )
+        elif "N1" in ids:
+            errors.append(
+                f"lint/fixtures/suppression/{fixture.name}: expected N1 to be "
+                "suppressed here, but it fired"
+            )
 
     return errors
 
@@ -383,80 +375,49 @@ def check_linter_referential_integrity(catalog: dict) -> list[str]:
     return errors
 
 
-def extract_dict_literal(text: str, name: str) -> dict[str, str]:
-    """Reads a top-level `NAME = {"key": "value", ...}` string->string dict
-    literal out of source text via regex, without importing or executing the
-    module it came from -- so a sync check that reads taorc_lint.py can't be
-    taken down (or made to silently run unrelated code) by an unrelated
-    change to that script's imports or top-level statements.
+@lru_cache(maxsize=None)
+def _load_lint_module():
+    """Imports taorc_lint.py directly so the sync checks below can read its
+    module-level tables (CATALOG_SEVERITY, CATALOG_SLUG, LANGUAGE_BY_SUFFIX)
+    as live Python objects instead of regex-scraping them out of source text
+    -- a scrape that breaks on any harmless reformatting of those tables.
+    Safe to import: the script is stdlib-only and guards its side effects
+    (argument parsing, ast-grep invocation) behind `if __name__ == "__main__"`.
     """
-    match = re.search(rf"^{name} = \{{(.*?)\n\}}", text, re.DOTALL | re.MULTILINE)
-    if not match:
-        return {}
-    return dict(re.findall(r'"([^"]+)":\s*"([^"]+)"', match.group(1)))
+    spec = importlib.util.spec_from_file_location("taorc_lint", LINT_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def check_lint_severity_sync(catalog: dict) -> list[str]:
+def check_lint_catalog_dict_sync(catalog: dict, linter_attr: str, catalog_field: str) -> list[str]:
     """v1-design-doc.md §8.2 claims "§3.1 requires the two to agree and CI
-    asserts it" for catalog vs. linter severity. Rule .yml files hardcode
-    severity: warning (ast-grep has no "suggestion" level -- see
-    taorc_lint.py's CATALOG_SEVERITY comment), so the only place severity can
-    actually drift from the catalog is that table; this reads it and diffs it
-    against catalog/rules.yaml.
+    asserts it" for catalog vs. linter severity; the same drift risk applies
+    to CATALOG_SLUG, which taorc_lint.py hand-duplicates from catalog/rules.yaml
+    for its --format json output. Both are rule_id -> value tables diffed the
+    same way against every lintable rule, so one function checks either.
     """
     errors = []
     if not LINT_SCRIPT.exists():
         return errors
 
-    text = LINT_SCRIPT.read_text(encoding="utf-8")
-    linter_severity_by_id = extract_dict_literal(text, "CATALOG_SEVERITY")
+    linter_values_by_id = getattr(_load_lint_module(), linter_attr)
 
     for rule in catalog["rules"]:
         if not rule.get("lintable"):
             continue
         rule_id = rule["id"]
-        linter_severity = linter_severity_by_id.get(rule_id)
-        if linter_severity is None:
+        expected = rule[catalog_field]
+        actual = linter_values_by_id.get(rule_id)
+        if actual is None:
             errors.append(
-                f"skills/readable-code/scripts/taorc_lint.py: CATALOG_SEVERITY "
+                f"skills/readable-code/scripts/taorc_lint.py: {linter_attr} "
                 f"is missing lintable rule {rule_id}"
             )
-        elif linter_severity != rule["severity"]:
+        elif actual != expected:
             errors.append(
-                f"skills/readable-code/scripts/taorc_lint.py: CATALOG_SEVERITY[{rule_id!r}] "
-                f"is {linter_severity!r}, catalog/rules.yaml says {rule['severity']!r}"
-            )
-    return errors
-
-
-def check_lint_slug_sync(catalog: dict) -> list[str]:
-    """taorc_lint.py's CATALOG_SLUG hand-duplicates each lintable rule's slug
-    from catalog/rules.yaml (it's shipped in every --format json finding),
-    but unlike CATALOG_SEVERITY it had no sync check -- a slug renamed in the
-    catalog could drift out of the linter's JSON output with CI staying
-    green. Mirrors check_lint_severity_sync.
-    """
-    errors = []
-    if not LINT_SCRIPT.exists():
-        return errors
-
-    text = LINT_SCRIPT.read_text(encoding="utf-8")
-    linter_slug_by_id = extract_dict_literal(text, "CATALOG_SLUG")
-
-    for rule in catalog["rules"]:
-        if not rule.get("lintable"):
-            continue
-        rule_id = rule["id"]
-        linter_slug = linter_slug_by_id.get(rule_id)
-        if linter_slug is None:
-            errors.append(
-                f"skills/readable-code/scripts/taorc_lint.py: CATALOG_SLUG "
-                f"is missing lintable rule {rule_id}"
-            )
-        elif linter_slug != rule["slug"]:
-            errors.append(
-                f"skills/readable-code/scripts/taorc_lint.py: CATALOG_SLUG[{rule_id!r}] "
-                f"is {linter_slug!r}, catalog/rules.yaml says {rule['slug']!r}"
+                f"skills/readable-code/scripts/taorc_lint.py: {linter_attr}[{rule_id!r}] "
+                f"is {actual!r}, catalog/rules.yaml says {expected!r}"
             )
     return errors
 
@@ -472,8 +433,7 @@ def check_lint_language_extension_sync() -> list[str]:
     if not LINT_SCRIPT.exists():
         return errors
 
-    text = LINT_SCRIPT.read_text(encoding="utf-8")
-    linter_language_by_suffix = extract_dict_literal(text, "LANGUAGE_BY_SUFFIX")
+    linter_language_by_suffix = _load_lint_module().LANGUAGE_BY_SUFFIX
 
     for language, extension in FIXTURE_EXTENSION_BY_LANGUAGE.items():
         linter_language = linter_language_by_suffix.get(extension)
@@ -667,8 +627,8 @@ def main() -> int:
         all_errors += check_suppression_fixtures()
         all_errors += check_referential_integrity(catalog)
         all_errors += check_linter_referential_integrity(catalog)
-        all_errors += check_lint_severity_sync(catalog)
-        all_errors += check_lint_slug_sync(catalog)
+        all_errors += check_lint_catalog_dict_sync(catalog, "CATALOG_SEVERITY", "severity")
+        all_errors += check_lint_catalog_dict_sync(catalog, "CATALOG_SLUG", "slug")
         all_errors += check_lint_language_extension_sync()
 
     all_errors += check_skill_spec(version)
