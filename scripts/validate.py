@@ -39,7 +39,7 @@ from pathlib import Path
 
 import jsonschema
 import yaml
-from build import AGENT_BLOCK_TOKEN_BUDGET, BLOCK_BEGIN, render_managed_block
+from build import AGENT_BLOCK_TOKEN_BUDGET, BLOCK_BEGIN, GITHUB_SKILLS_COPY, render_managed_block
 from lib import (
     CATEGORY_PREFIXES,
     REPO_ROOT,
@@ -614,6 +614,49 @@ def check_skill_spec(version: str) -> list[str]:
     return errors
 
 
+def check_github_skills_copy_sync() -> list[str]:
+    """build.py's sync_github_skills_copy() copies skills/readable-code to
+    .github/skills/readable-code (Copilot reads only the latter) but nothing
+    re-runs that copy in CI, so an edit to the canonical skill that skips
+    `python scripts/build.py` leaves the GitHub copy stale with no signal --
+    check_skill_spec above only ever reads the canonical directory. Compares
+    file contents rather than just names, so a byte-level edit that misses
+    the copy step is also caught, not just an added/removed file.
+    """
+    source_dir = REPO_ROOT / GITHUB_SKILLS_COPY[0]
+    dest_dir = REPO_ROOT / GITHUB_SKILLS_COPY[1]
+    if not source_dir.exists() or not dest_dir.exists():
+        return []
+
+    ignored_names = {"__pycache__", ".DS_Store"}
+
+    def tracked_files(root: Path) -> dict[str, Path]:
+        return {
+            str(path.relative_to(root)): path
+            for path in root.rglob("*")
+            if path.is_file()
+            and not any(part in ignored_names for part in path.relative_to(root).parts)
+            and path.suffix != ".pyc"
+        }
+
+    source_files = tracked_files(source_dir)
+    dest_files = tracked_files(dest_dir)
+
+    errors = []
+    for relative_path in sorted(source_files.keys() - dest_files.keys()):
+        errors.append(f"{GITHUB_SKILLS_COPY[1]}/{relative_path}: missing from GitHub skills copy")
+    for relative_path in sorted(dest_files.keys() - source_files.keys()):
+        errors.append(f"{GITHUB_SKILLS_COPY[1]}/{relative_path}: not present in {GITHUB_SKILLS_COPY[0]}")
+    for relative_path in sorted(source_files.keys() & dest_files.keys()):
+        if source_files[relative_path].read_bytes() != dest_files[relative_path].read_bytes():
+            errors.append(
+                f"{GITHUB_SKILLS_COPY[1]}/{relative_path}: out of sync with "
+                f"{GITHUB_SKILLS_COPY[0]}/{relative_path} -- run scripts/build.py"
+            )
+
+    return errors
+
+
 def main() -> int:
     catalog = load_catalog()
     version = read_version()
@@ -636,6 +679,7 @@ def main() -> int:
         all_errors += check_lint_language_extension_sync()
 
     all_errors += check_skill_spec(version)
+    all_errors += check_github_skills_copy_sync()
     all_errors += check_budgets(version)
     all_errors += check_version_sync(version)
 

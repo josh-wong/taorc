@@ -10,6 +10,8 @@ This repository is in early development. The [product requirements doc](v1-produ
 
 ## Install
 
+Pick the row that matches how the target harness reads instructions or skills.
+
 | Target | Command |
 | --- | --- |
 | Agent Skills runtimes | `npx skills add josh-wong/taorc` |

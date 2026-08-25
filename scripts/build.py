@@ -125,8 +125,6 @@ def main() -> int:
 
     print(f"Rendered managed block for v{version} ({tokens} tokens, within budget).")
 
-    if not ADAPTER_TARGETS:
-        print("No adapter targets registered yet — nothing to write (see MS5).")
     for relative_path, frontmatter in ADAPTER_TARGETS:
         apply_managed_block(REPO_ROOT / relative_path, block, frontmatter)
         print(f"Updated {relative_path}")
