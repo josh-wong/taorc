@@ -2,10 +2,14 @@
 """The CI validation gate (v1-design-doc.md §9).
 
 Checks whose subject does not exist yet are skipped rather than failed, so
-this runs clean against a tree partway through the milestones — skill-spec
-validation (no skills/readable-code/SKILL.md until MS3), lint fixtures (no
-taorc-lint until MS4), and the installer/placement-matrix tests (no
+this runs clean against a tree partway through the milestones — lint fixtures
+(no taorc-lint until MS4) and the installer/placement-matrix tests (no
 installers until MS5) are not implemented here for that reason.
+
+Skill-spec validation is partial rather than absent. §9 specifies
+`skills-ref validate`, an external tool this gate does not shell out to;
+check_skill_spec covers the stdlib-checkable half instead. See its docstring
+for what that leaves to the external tool.
 
 The catalog itself is not among them. It has been required to be schema-valid
 since MS2 gave it a mandatory 'precedence' block, so the empty catalog that
@@ -20,6 +24,7 @@ import re
 import sys
 
 import jsonschema
+import yaml
 from build import AGENT_BLOCK_TOKEN_BUDGET, BLOCK_BEGIN, render_managed_block
 from lib import (
     CATEGORY_PREFIXES,
@@ -42,6 +47,11 @@ BUDGETS = {
 }
 
 SKILL_MD_LINE_LIMIT = 500
+
+# The Agent Skills spec caps a skill description at 1024 characters. It is the
+# field that decides whether the skill fires at all (PRD M4), so an overrun
+# that a harness silently truncates would cost triggers, not just tidiness.
+SKILL_DESCRIPTION_LIMIT = 1024
 
 # Files that legitimately cite rule IDs; everything else under these roots is
 # scanned for referential integrity against catalog/rules.yaml.
@@ -219,6 +229,103 @@ def check_version_sync(version: str) -> list[str]:
     return errors
 
 
+def _parse_frontmatter(text: str) -> dict | None:
+    """The YAML frontmatter block, or None if the file has no well-formed one.
+
+    Malformed YAML returns None rather than propagating: this gate's job is to
+    report what is wrong with the file, and a traceback out of here would take
+    down the checks that run after it as well.
+    """
+    if not text.startswith("---\n"):
+        return None
+    end = text.find("\n---\n", 3)
+    if end == -1:
+        return None
+    try:
+        parsed = yaml.safe_load(text[4 : end + 1])
+    except yaml.YAMLError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def check_skill_spec(version: str) -> list[str]:
+    """The parts of §9's skill-spec check that need no external tool.
+
+    `skills-ref validate` covers the full Agent Skills spec and is not run
+    here; what this adds is the half that is cheap and that CI would otherwise
+    never see -- that the frontmatter parses, that 'name' matches the directory
+    (the spec requires it, and an installer that resolves a skill by directory
+    would silently install one named something else), that the description is a
+    string within the spec's length limit, that metadata.version tracks VERSION,
+    and that every reference SKILL.md points at actually exists. A dangling
+    pointer costs an agent a failed read at the exact moment it decided it
+    needed the file.
+    """
+    errors = []
+    skill_dir = REPO_ROOT / "skills" / "readable-code"
+    skill_md = skill_dir / "SKILL.md"
+    # A hard error, not a milestone skip. The file has existed since MS3, and
+    # check_budgets also skips a missing path -- so treating its absence as
+    # "nothing to check" would let a deleted or renamed skill directory take
+    # the token and line budgets down with it, silently, on a green run.
+    if not skill_md.exists():
+        return ["skills/readable-code/SKILL.md: missing"]
+
+    text = skill_md.read_text(encoding="utf-8")
+    frontmatter = _parse_frontmatter(text)
+    if frontmatter is None:
+        return ["skills/readable-code/SKILL.md: no parseable YAML frontmatter"]
+
+    name = frontmatter.get("name")
+    if name != skill_dir.name:
+        errors.append(
+            f"skills/readable-code/SKILL.md: name {name!r} does not match "
+            f"directory name {skill_dir.name!r}"
+        )
+
+    description = frontmatter.get("description")
+    if not description:
+        errors.append("skills/readable-code/SKILL.md: frontmatter has no description")
+    elif not isinstance(description, str):
+        # An unquoted description that parses as a number or a list is still a
+        # broken description; say so rather than raising on len().
+        errors.append(
+            f"skills/readable-code/SKILL.md: description parsed as "
+            f"{type(description).__name__}, not a string"
+        )
+    elif len(description) > SKILL_DESCRIPTION_LIMIT:
+        errors.append(
+            f"skills/readable-code/SKILL.md: description is {len(description)} characters, "
+            f"over the {SKILL_DESCRIPTION_LIMIT}-character spec limit"
+        )
+
+    # Nothing else covers this. check_version_sync reads the four manifests and
+    # the managed-block markers, and build.py never writes SKILL.md, so without
+    # this a VERSION bump leaves the shipped skill advertising the old one.
+    metadata = frontmatter.get("metadata")
+    if metadata is not None and not isinstance(metadata, dict):
+        errors.append(
+            f"skills/readable-code/SKILL.md: metadata parsed as "
+            f"{type(metadata).__name__}, not a mapping"
+        )
+    else:
+        skill_version = (metadata or {}).get("version")
+        if skill_version != version:
+            errors.append(
+                f"skills/readable-code/SKILL.md: metadata.version {skill_version!r} "
+                f"does not match VERSION ({version!r})"
+            )
+
+    for reference in sorted(set(re.findall(r"references/([\w-]+\.md)", text))):
+        if not (skill_dir / "references" / reference).exists():
+            errors.append(
+                f"skills/readable-code/SKILL.md: points at references/{reference}, "
+                f"which does not exist"
+            )
+
+    return errors
+
+
 def main() -> int:
     catalog = load_catalog()
     version = read_version()
@@ -234,6 +341,7 @@ def main() -> int:
         all_errors += check_lint_rule_files(catalog)
         all_errors += check_referential_integrity(catalog)
 
+    all_errors += check_skill_spec(version)
     all_errors += check_budgets(version)
     all_errors += check_version_sync(version)
 
