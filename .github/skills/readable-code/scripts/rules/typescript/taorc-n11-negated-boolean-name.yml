@@ -1,0 +1,15 @@
+id: taorc-n11-negated-boolean-name-typescript
+language: TypeScript
+severity: warning
+message: "[N11] Negated boolean name"
+note: rename so the boolean reads positively (for example isReady instead of isNotReady)
+rule:
+  kind: variable_declarator
+  all:
+    - has:
+        field: name
+        kind: identifier
+        regex: "^(?i:is_?|has_?|can_?)?(?i:not|no|non|dont|cant|disable)(_|[A-Z]|$)"
+    - has:
+        field: value
+        regex: '^(true|false)$'

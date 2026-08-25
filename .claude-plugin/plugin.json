@@ -1,0 +1,22 @@
+{
+  "name": "taorc",
+  "description": "Write, comment, and review code so the next reader understands it in the least time, based on The Art of Readable Code (Boswell & Foucher).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Josh Wong",
+    "url": "https://github.com/josh-wong"
+  },
+  "homepage": "https://github.com/josh-wong/taorc",
+  "repository": "https://github.com/josh-wong/taorc",
+  "license": "MIT",
+  "keywords": [
+    "readability",
+    "code-review",
+    "linting",
+    "comments",
+    "naming"
+  ],
+  "skills": [
+    "./skills/readable-code"
+  ]
+}

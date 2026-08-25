@@ -1,0 +1,8 @@
+id: taorc-c4-placeholder-comment-typescript
+language: TypeScript
+severity: warning
+message: "[C4] Placeholder comment"
+note: name what is left with a TODO(#issue) marker, or finish the implementation
+rule:
+  kind: comment
+  regex: "(?i)(in a real implementation|for now|simplified (version|example)|in production)"

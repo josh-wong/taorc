@@ -2,9 +2,13 @@
 """The CI validation gate (v1-design-doc.md §9).
 
 Checks whose subject does not exist yet are skipped rather than failed, so
-this runs clean against a tree partway through the milestones — the
-installer/placement-matrix tests (no installers until MS5) are not
-implemented here for that reason.
+this runs clean against a tree partway through the milestones.
+
+§9 items 8-9 (installer behavior, placement matrix) are not implemented
+here: they need a real interpreter (bash or pwsh) invoking scripts/install.sh
+/ install.ps1 against a temp directory per OS, which is a different shape of
+test than the in-process checks below. See scripts/tests/test_installer.py
+and the installer-matrix job in .github/workflows/build-and-test.yaml.
 
 check_lint_fixtures (MS4) follows the same skip-don't-fail rule for a
 different reason: taorc_lint.py itself degrades gracefully when ast-grep
