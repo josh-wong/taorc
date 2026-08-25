@@ -135,9 +135,23 @@ if config.verbose and warnings:
 ```
 
 This one has a real exception, and it is a correctness exception, so precedence
-entry 1 governs. `x == True` and `x` are equivalent only when `x` genuinely
-holds a boolean. For any other truthy value — `1`, a non-empty string, an object
-— they differ. Make the change only where the two forms are actually the same.
+entry 1 governs. It has two halves, and the example above performs both
+rewrites, so both matter.
+
+Dropping the comparison against a boolean literal is safe only where the value
+genuinely holds a boolean. For any other truthy value — `1`, a non-empty
+string, an object — `x == True` and `x` differ.
+
+Testing a collection by using it is safe for built-in containers and not for
+types that redefine truthiness. A NumPy array raises on `if x:` where
+`len(x) > 0` succeeds, so the rewrite turns working code into
+`ValueError: The truth value of an array with more than one element is
+ambiguous`. A value that might be `None` needs that case handled on its own
+terms rather than folded into a truthiness test.
+
+When the type is not evident from the code in front of you, leave the
+comparison alone. This rule is a readability preference; a wrong rewrite is a
+crash.
 
 **`E6` — no side effects in boolean operators.** Boolean operators compute
 booleans. Using one to run code that happens to sit on its right-hand side saves

@@ -58,11 +58,23 @@ def total_cents(prices: list[int]) -> int:
 division.
 
 This rule has the sharpest exception in the catalog, and it is a correctness
-exception. "Nothing calls it" is a claim about the whole world, and a repository
-shows you part of it. Apply it freely to symbols private to their module; for
+exception with two halves.
+
+"Nothing calls it" is a claim about the whole world, and a repository shows you
+part of it. Apply the rule freely to symbols private to their module; for
 anything exported, *propose* the deletion rather than making it — the same
-reasoning `X3` gives for renames. Commented-out code is the one part of this
-rule that is always safe to act on.
+reasoning `X3` gives for renames.
+
+An unreachable branch or an impossible error condition gets the same treatment
+whenever the impossibility rests on an assumption rather than on the code in
+front of you. In the example above it does not: `sum` over a list of integers
+cannot divide, and that is visible without leaving the function. But a handler
+that is impossible only because `line.amount` is *always* numeric rests on a
+schema nobody in this file controls, and deleting it converts a future genuine
+error into a silent wrong answer. Dead code costs a reader time; deleted live
+code costs correctness, and precedence entry 1 settles which of those wins.
+
+Commented-out code is the one part of this rule that is always safe to act on.
 
 ## Separate what does not belong together
 

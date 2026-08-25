@@ -58,8 +58,11 @@ two and name each half.
 ## Values a caller can get wrong
 
 These are the rules where readability stops being separate from correctness. A
-misread unit is a bug, not a style complaint, which is why a review should raise
-them as errors rather than notes.
+misread unit is a bug, not a style complaint, so give these findings the weight
+the mistake would carry — but keep to the catalog's severities rather than
+inventing an escalation. `N3` and `N4` are `warning`, `N13` is `suggestion`,
+and `references/review-checklist.md` covers when a specific instance earns
+more.
 
 **`N3` — units, formats, encodings.** If a value carries a unit a caller could
 get wrong, the unit belongs in the identifier, not in a type comment they will
@@ -169,6 +172,12 @@ it is more readable than importing this catalog's preferences into one file.
 **Never rename an exported symbol on your own initiative.** `X3` is absolute
 about this. A caller you cannot see is still a caller, and a rename that
 improves one file can break every consumer of the package. Propose it instead.
+
+This applies to the before/after pairs above. Several of them rename exported
+identifiers — `Cache.Get`, `Queue.IsReady` — because that is where vague naming
+does the most damage and therefore where the contrast is clearest. They show
+what a better name looks like when you are choosing one. They are not a diff to
+go and apply to an existing public API.
 
 **Do not rename to satisfy a rule when the diff was about something else.** `X1`
 governs. Note it in the report and leave it.

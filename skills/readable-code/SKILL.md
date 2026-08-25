@@ -61,12 +61,15 @@ Follow these five steps in `write` and `refactor` mode. Review mode skips them
 3. SELF-CHECK           Run the checklist below. Not optional; this is where
                         most of the gain comes from.
 
-4. VERIFY               If the linter is available, resolve the skill root as
-                        the first existing of .claude/skills/readable-code/,
+4. VERIFY               Look for scripts/taorc_lint.py under each of
+                        .claude/skills/readable-code/,
                         .agents/skills/readable-code/,
                         .github/skills/readable-code/, skills/readable-code/,
-                        then run python <root>/scripts/taorc_lint.py --changed.
-                        If none exists, skip this step; do not search further.
+                        and run the first one that EXISTS AS A FILE:
+                        python <root>/scripts/taorc_lint.py --changed.
+                        A directory alone is not enough — it can exist without
+                        the linter in it. If no such file exists, skip this
+                        step; do not search further and do not install it.
                         Fix findings, re-run, repeat until clean — or until a
                         finding is a justified false positive. Say which.
 

@@ -37,6 +37,14 @@ your judgment, which is why this file exists.
 | Test named `test_1`, `test_basic`, `test_works`       | `T3`  | ✓    | Name the scenario and the expectation                |
 | Hedging comment: "This should probably..."            | `C13` |      | Decide, or file a real `TODO`                        |
 
+Two rows need a caveat the Fix column has no room for. `E4`'s `if x:` is safe
+only where the value is a real boolean or a built-in container — a NumPy array
+raises on it, and a possible `None` needs handling on its own terms. `S7`'s
+"delete" applies to code the surrounding lines prove is unreachable, not to a
+handler that is impossible only under an assumption. `control-flow.md` and
+`structure.md` carry both in full; check them before applying either row to
+anything you did not write.
+
 The Lint column marks eight of `taorc-lint`'s nine rules; the banner and emoji
 rows share `X8`, which is why nine check marks cover eight rules. The ninth,
 `N11` (negated boolean name), has no row here at all: it is an ordinary naming

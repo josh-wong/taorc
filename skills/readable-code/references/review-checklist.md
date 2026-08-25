@@ -59,18 +59,27 @@ technically supports it.
 
 ## Severity
 
-Use three levels, and use them sparingly — everything cannot be important.
+Use `error`, `warning`, and `suggestion` — the same three the catalog's
+`severity` field carries and the only three `taorc-lint` emits. Do not invent a
+fourth level. A finding that fits none of these is one to reconsider, not
+relabel.
 
-| Severity | Means                                                             | Example                                           |
-| -------- | ----------------------------------------------------------------- | ------------------------------------------------- |
-| error    | A reader will likely misunderstand this and write a bug           | `N3` on a value where the wrong unit is plausible |
-| warning  | Costs real comprehension time, but is unlikely to cause a mistake | `C1` on a comment restating its line              |
-| note     | Worth mentioning; the author may reasonably decline               | `A4` on inconsistent ordering across two files    |
+| Severity   | Means                                            | Example                                        |
+| ---------- | ------------------------------------------------ | ---------------------------------------------- |
+| error      | Leads to broken work, not merely slow reading    | `X3` on an unrequested rename of a public API  |
+| warning    | Costs real comprehension time, and could mislead | `C1` on a comment restating its line           |
+| suggestion | Worth raising; the author may reasonably decline | `A4` on inconsistent ordering across two files |
 
-If a finding is about a value a caller could plausibly get wrong — a bare
-`timeout`, a range whose inclusivity is ambiguous — it is an error, not a style
-note. Those are the cases where readability and correctness stop being separate
-concerns.
+Default to the severity the catalog already gives the rule rather than deciding
+afresh each time, so two reviews of the same code rank their findings the same
+way. `N3` is a `warning`; `A4` is a `suggestion`. Only the four `X` guardrails
+carry `error`, which is the catalog saying that misapplying a readability rule
+does more damage than the readability problem it was aimed at.
+
+Go above a rule's catalog severity only when the specific instance earns it,
+and say why in the finding. A bare `timeout` where seconds and milliseconds are
+both plausible is worth more than a generic `N3` warning, because that is where
+readability and correctness stop being separate concerns.
 
 ## Finding format
 

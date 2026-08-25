@@ -302,12 +302,19 @@ def check_skill_spec(version: str) -> list[str]:
     # Nothing else covers this. check_version_sync reads the four manifests and
     # the managed-block markers, and build.py never writes SKILL.md, so without
     # this a VERSION bump leaves the shipped skill advertising the old one.
-    skill_version = (frontmatter.get("metadata") or {}).get("version")
-    if skill_version != version:
+    metadata = frontmatter.get("metadata")
+    if metadata is not None and not isinstance(metadata, dict):
         errors.append(
-            f"skills/readable-code/SKILL.md: metadata.version {skill_version!r} "
-            f"does not match VERSION ({version!r})"
+            f"skills/readable-code/SKILL.md: metadata parsed as "
+            f"{type(metadata).__name__}, not a mapping"
         )
+    else:
+        skill_version = (metadata or {}).get("version")
+        if skill_version != version:
+            errors.append(
+                f"skills/readable-code/SKILL.md: metadata.version {skill_version!r} "
+                f"does not match VERSION ({version!r})"
+            )
 
     for reference in sorted(set(re.findall(r"references/([\w-]+\.md)", text))):
         if not (skill_dir / "references" / reference).exists():
