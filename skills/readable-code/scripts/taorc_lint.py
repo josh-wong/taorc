@@ -167,13 +167,19 @@ def c1_fires(comment_text: str, statement_text: str) -> bool:
     return (matched / len(stemmed_comment)) >= C1_MATCH_THRESHOLD
 
 
-def next_statement_line(lines: list[str], comment_line_index: int) -> str | None:
-    for line in lines[comment_line_index + 1 :]:
+def next_statement_line_index(lines: list[str], comment_line_index: int) -> int | None:
+    """0-based index of the next non-blank, non-comment line after comment_line_index."""
+    for offset, line in enumerate(lines[comment_line_index + 1 :], start=1):
         stripped = line.strip()
         if not stripped or COMMENT_PREFIX.match(line):
             continue
-        return stripped
+        return comment_line_index + offset
     return None
+
+
+def next_statement_line(lines: list[str], comment_line_index: int) -> str | None:
+    index = next_statement_line_index(lines, comment_line_index)
+    return lines[index].strip() if index is not None else None
 
 
 N1_SHORT_FUNCTION_LINES = 5
@@ -339,7 +345,11 @@ def collect_suppressions(paths: set[str]) -> tuple[dict[tuple[str, int, str], st
             if not ids:
                 continue  # a bare taorc-ignore suppresses nothing
             reason = (match.group("reason") or "").strip()
-            target_line = index + 2 if match.group("next") else index + 1
+            if match.group("next"):
+                statement_index = next_statement_line_index(lines, index)
+                target_line = statement_index + 1 if statement_index is not None else index + 2
+            else:
+                target_line = index + 1
             if not reason:
                 malformed.append(
                     Finding(
