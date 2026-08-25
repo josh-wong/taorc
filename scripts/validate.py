@@ -2,9 +2,14 @@
 """The CI validation gate (v1-design-doc.md §9).
 
 Checks whose subject does not exist yet are skipped rather than failed, so
-this runs clean against a tree partway through the milestones — lint fixtures
-(no taorc-lint until MS4) and the installer/placement-matrix tests (no
-installers until MS5) are not implemented here for that reason.
+this runs clean against a tree partway through the milestones — the
+installer/placement-matrix tests (no installers until MS5) are not
+implemented here for that reason.
+
+check_lint_fixtures (MS4) follows the same skip-don't-fail rule for a
+different reason: taorc_lint.py itself degrades gracefully when ast-grep
+isn't on PATH (§8.1), so a CI environment without it should see this gate
+skip the same checks taorc-lint would, not fail on a tool it never had.
 
 Skill-spec validation is partial rather than absent. §9 specifies
 `skills-ref validate`, an external tool this gate does not shell out to;
@@ -21,6 +26,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 import sys
 
 import jsonschema
@@ -130,6 +137,77 @@ def check_lint_rule_files(catalog: dict) -> list[str]:
                 f"catalog/rules.yaml: {rule['id']} names lint_rule {lint_rule!r}, "
                 f"no matching file under skills/readable-code/scripts/rules/*/"
             )
+    return errors
+
+
+LINT_SCRIPT = REPO_ROOT / "skills" / "readable-code" / "scripts" / "taorc_lint.py"
+FIXTURE_EXTENSION_BY_LANGUAGE = {"python": ".py", "typescript": ".ts"}
+
+
+def check_lint_fixtures(catalog: dict) -> list[str]:
+    """§9 item 7: every lintable rule's fixtures must produce the finding set
+    PRD R6.4 requires -- the positive fixture fires, the negative one (the
+    false-positive suite M5 is measured against) does not.
+
+    Skipped, not failed, when ast-grep isn't on PATH; see this module's
+    docstring for why that differs from every other check here.
+    """
+    if shutil.which("ast-grep") is None and shutil.which("sg") is None:
+        return []
+
+    errors = []
+    fixtures_root = REPO_ROOT / "lint" / "fixtures"
+
+    for rule in catalog["rules"]:
+        if not rule.get("lintable"):
+            continue
+        rule_id = rule["id"]
+        fixture_name = rule_id.lower()
+
+        for kind in ("positive", "negative"):
+            for language, extension in FIXTURE_EXTENSION_BY_LANGUAGE.items():
+                fixture = fixtures_root / kind / language / f"{fixture_name}{extension}"
+                if not fixture.exists():
+                    errors.append(
+                        f"lint/fixtures/{kind}/{language}/{fixture_name}{extension}: "
+                        f"missing fixture for {rule_id}"
+                    )
+                    continue
+
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(LINT_SCRIPT),
+                        "--rules",
+                        rule_id,
+                        "--format",
+                        "json",
+                        str(fixture),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                try:
+                    findings = json.loads(completed.stdout or "[]")
+                except json.JSONDecodeError:
+                    errors.append(
+                        f"lint/fixtures/{kind}/{language}/{fixture_name}{extension}: "
+                        f"taorc_lint.py did not produce valid JSON ({completed.stderr.strip()})"
+                    )
+                    continue
+
+                if kind == "positive" and not findings:
+                    errors.append(
+                        f"lint/fixtures/{kind}/{language}/{fixture_name}{extension}: "
+                        f"expected {rule_id} to fire here, but it did not"
+                    )
+                if kind == "negative" and findings:
+                    errors.append(
+                        f"lint/fixtures/{kind}/{language}/{fixture_name}{extension}: "
+                        f"{rule_id} fired on a fixture that must not trigger it"
+                    )
+
     return errors
 
 
@@ -339,6 +417,7 @@ def main() -> int:
     if not all_errors:
         all_errors += check_id_consistency(catalog)
         all_errors += check_lint_rule_files(catalog)
+        all_errors += check_lint_fixtures(catalog)
         all_errors += check_referential_integrity(catalog)
 
     all_errors += check_skill_spec(version)

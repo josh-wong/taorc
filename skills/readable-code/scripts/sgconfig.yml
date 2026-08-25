@@ -1,0 +1,10 @@
+ruleDirs:
+  - rules
+
+# JavaScript has no rules of its own -- ast-grep's TypeScript parser is a
+# strict superset, so TypeScript rules cover .js/.jsx too (R6.3 language
+# coverage) without a duplicate rule file per rule.
+languageGlobs:
+  TypeScript:
+    - "*.js"
+    - "*.jsx"

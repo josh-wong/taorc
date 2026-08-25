@@ -1,0 +1,16 @@
+id: taorc-n1-empty-word-identifier-typescript
+language: TypeScript
+severity: warning
+message: "[N1] Empty-word identifier"
+note: rename to a word that says what is actually stored or returned
+rule:
+  kind: identifier
+  regex: '^(data|result|output|value|item|obj|info)$'
+  any:
+    - inside:
+        kind: variable_declarator
+        field: name
+    - inside:
+        kind: required_parameter
+    - inside:
+        kind: optional_parameter

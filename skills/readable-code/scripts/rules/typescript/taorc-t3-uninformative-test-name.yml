@@ -1,0 +1,15 @@
+id: taorc-t3-uninformative-test-name-typescript
+language: TypeScript
+severity: warning
+message: "[T3] Uninformative test name"
+note: name the test for the situation it sets up and the outcome it expects
+rule:
+  kind: identifier
+  regex: "(?i)^test_?(\\d+|it|works|basic|main|case\\d*)?$"
+  any:
+    - inside:
+        kind: function_declaration
+        field: name
+    - inside:
+        kind: variable_declarator
+        field: name

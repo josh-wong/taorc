@@ -1,0 +1,15 @@
+id: taorc-n3-unit-free-name-typescript
+language: TypeScript
+severity: warning
+message: "[N3] Name has no unit"
+note: add a unit or format suffix (for example Ms, Secs, Bytes) to the name
+rule:
+  kind: variable_declarator
+  all:
+    - has:
+        field: name
+        kind: identifier
+        regex: '(delay|timeout|elapsed|duration|interval|expiry|ttl|size|length|limit)$'
+    - has:
+        field: value
+        kind: number

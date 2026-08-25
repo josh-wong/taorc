@@ -6,7 +6,7 @@ Agents optimize for producing something that satisfies a request and passes revi
 
 ## Status
 
-This repository is in early development. The [product requirements doc](v1-product-requirements-doc.md) and [design doc](v1-design-doc.md) are approved and describe the full v1 scope: an 85-rule catalog, a hand-written skill package, generated adapters for around ten agent harnesses, a stdlib-only linter (`taorc-lint`), and a published cross-model eval suite. The catalog is complete; the skill package, the adapters, the linter, and the eval suite have not shipped yet, so there is nothing to install from this repo today. Once the skill and linter exist, this section will be replaced with install instructions and benchmark results.
+This repository is in early development. The [product requirements doc](v1-product-requirements-doc.md) and [design doc](v1-design-doc.md) are approved and describe the full v1 scope: an 85-rule catalog, a hand-written skill package, generated adapters for around ten agent harnesses, a stdlib-only linter (`taorc-lint`), and a published cross-model eval suite. The catalog, the skill package, and the linter are complete; the generated adapters, the installers, and the eval suite have not shipped yet, so there is still no packaged install from this repo today. Once the adapters and installers exist, this section will be replaced with install instructions and benchmark results.
 
 ## Why this and not a general clean-code skill
 
@@ -20,6 +20,19 @@ Several skills already cover general clean-code advice (see the prior-art survey
 | Objective evidence | Rarely measured | Published before/after benchmark, cross-model |
 
 They're complements, not substitutes — a design-level skill and a naming/comments/control-flow-level skill compose well together.
+
+## Linting
+
+`skills/readable-code/scripts/taorc_lint.py` is a stdlib-only Python script that checks code against the nine catalog rules a pattern match can catch with high precision — see `v1-design-doc.md` §8 for the full rule table and the C1 scoring algorithm. It ships inside the skill directory, so it travels with every install method and needs no separate install step of its own beyond [ast-grep](https://ast-grep.github.io/), which it shells out to. Without ast-grep on `PATH`, it prints an install hint and exits `0` rather than failing a build over a missing optional tool.
+
+```console
+$ python skills/readable-code/scripts/taorc_lint.py --changed
+[N3] src/api/client.ts:42  Name has no unit
+  const timeout = 30;
+  → add a unit or format suffix (for example _ms, _secs, _bytes) to the name
+```
+
+Covers Python and TypeScript/JavaScript only for v1. Structural checks — nesting depth, function length, boolean/branch complexity — are out of scope on purpose (a mainstream linter already does them well); `lint/configs/ruff.toml` and `lint/configs/eslintrc.readability.json` are recommended, ready-to-merge snippets that enable those checks in your own project's linter. Neither file is installed or executed by this repo or by any agent following the skill — copy the rules you want into your own config.
 
 ## Non-goals
 

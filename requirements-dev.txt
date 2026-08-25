@@ -2,3 +2,8 @@ pyyaml==6.0.2
 jsonschema==4.23.0
 tiktoken==0.8.0
 ruff==0.16.4
+# taorc_lint.py itself never depends on this (it shells out to whatever
+# ast-grep it finds on PATH, or degrades gracefully without one -- see
+# v1-design-doc.md §8.1). It's here so validate.py's check_lint_fixtures can
+# exercise the lint fixture suite in CI instead of silently skipping it.
+ast-grep-cli==0.45.2

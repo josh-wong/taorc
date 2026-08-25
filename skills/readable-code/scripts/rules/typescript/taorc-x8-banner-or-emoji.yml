@@ -1,0 +1,15 @@
+id: taorc-x8-banner-or-emoji-typescript
+language: TypeScript
+severity: warning
+message: "[X8] Banner comment or emoji"
+note: delete it; a file that needs section dividers needs splitting, and emoji carry no information here
+rule:
+  any:
+    - kind: comment
+      regex: '[=\-*_#]{5,}'
+    - kind: comment
+      regex: '[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}]'
+    - kind: string
+      regex: '[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}]'
+    - kind: template_string
+      regex: '[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B00}-\x{2BFF}]'
