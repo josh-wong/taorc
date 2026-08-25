@@ -24,7 +24,7 @@
 #   --source PATH     A local taorc checkout to install from, instead of
 #                     downloading one. Mainly for testing and offline use.
 #   --agents LIST     Comma-separated subset of: claude, copilot, cursor,
-#                     cline, windsurf, gemini, agents. Default: all.
+#   --agents=LIST     cline, windsurf, gemini, agents. Default: all.
 #   --detect          Only refresh adapters that are already installed;
 #                     never create a new one.
 #   --uninstall       Remove the taorc managed block from every adapter and
@@ -81,6 +81,9 @@ while [ $# -gt 0 ]; do
             shift
             [ $# -gt 0 ] || die "--agents requires a comma-separated list"
             AGENTS_LIST="$(printf '%s' "$1" | tr ',' ' ')"
+            ;;
+        --agents=*)
+            AGENTS_LIST="$(printf '%s' "${1#--agents=}" | tr ',' ' ')"
             ;;
         --detect) DETECT=1 ;;
         --uninstall) UNINSTALL=1 ;;

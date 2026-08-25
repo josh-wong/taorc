@@ -210,43 +210,71 @@ applyTo: "**/*"
             return
         }
 
-        $existing = Get-Content $targetPath -Raw
-        if (-not $existing) { $existing = "" }
+        $existingLines = Get-Content -LiteralPath $targetPath
+        $hasBegin = $existingLines | Where-Object { $_.Contains($beginPrefix) } | Select-Object -First 1
+        $hasEnd = $existingLines | Where-Object { $_.Contains($endMarker) } | Select-Object -First 1
 
-        if ($existing.Contains($beginPrefix) -and $existing.Contains($endMarker)) {
-            $startIndex = $existing.IndexOf($beginPrefix)
-            $endIndex = $existing.IndexOf($endMarker) + $endMarker.Length
-            $before = $existing.Substring(0, $startIndex)
-            $after = $existing.Substring($endIndex)
-            # $after still carries the single newline that originally separated
-            # the old end marker from whatever follows; strip it before
-            # re-adding $blockText's own trailing newline, or repeated runs
-            # accumulate one extra blank line each time (mirrors build.py's
-            # apply_managed_block).
-            if ($after.StartsWith("`n")) { $after = $after.Substring(1) }
-            $updated = $before + $blockText.TrimEnd("`n") + "`n" + $after
+        if ($hasBegin -and $hasEnd) {
+            # Line-based, like install.sh's awk equivalent: a line containing a
+            # marker is dropped in its entirety, not sliced at the marker text,
+            # and a missing end marker (inBlock never clears) drops everything
+            # from the begin line to EOF instead of computing a bogus offset.
+            $outputLines = New-Object System.Collections.Generic.List[string]
+            $inBlock = $false
+            foreach ($line in $existingLines) {
+                if (-not $inBlock -and $line.Contains($beginPrefix)) {
+                    $outputLines.Add($blockText.TrimEnd("`n"))
+                    $inBlock = $true
+                    continue
+                }
+                if ($inBlock -and $line.Contains($endMarker)) {
+                    $inBlock = $false
+                    continue
+                }
+                if ($inBlock) { continue }
+                $outputLines.Add($line)
+            }
+            $updated = ($outputLines -join "`n") + "`n"
             [System.IO.File]::WriteAllText($targetPath, $updated)
             Write-Log "updated $targetPath"
         }
         else {
-            $separator = if ($existing -and -not $existing.EndsWith("`n")) { "`n" } else { "" }
-            [System.IO.File]::WriteAllText($targetPath, $existing + $separator + $blockText)
+            $existingRaw = Get-Content -LiteralPath $targetPath -Raw
+            if (-not $existingRaw) { $existingRaw = "" }
+            $separator = if ($existingRaw -and -not $existingRaw.EndsWith("`n")) { "`n" } else { "" }
+            [System.IO.File]::WriteAllText($targetPath, $existingRaw + $separator + $blockText)
             Write-Log "appended to $targetPath"
         }
     }
 
     function Remove-Block([string]$targetPath) {
         if (-not (Test-Path $targetPath)) { return }
-        $existing = Get-Content $targetPath -Raw
-        if (-not $existing -or -not $existing.Contains($beginPrefix)) { return }
+        $existingLines = Get-Content -LiteralPath $targetPath
+        if (-not $existingLines) { return }
+        $hasBegin = $existingLines | Where-Object { $_.Contains($beginPrefix) } | Select-Object -First 1
+        if (-not $hasBegin) { return }
 
-        $startIndex = $existing.IndexOf($beginPrefix)
-        $endIndex = $existing.IndexOf($endMarker) + $endMarker.Length
-        $before = $existing.Substring(0, $startIndex)
-        $after = $existing.Substring($endIndex)
-        $remaining = ($before + $after)
+        $outputLines = New-Object System.Collections.Generic.List[string]
+        $inBlock = $false
+        foreach ($line in $existingLines) {
+            if (-not $inBlock -and $line.Contains($beginPrefix)) {
+                $inBlock = $true
+                continue
+            }
+            if ($inBlock -and $line.Contains($endMarker)) {
+                $inBlock = $false
+                continue
+            }
+            if ($inBlock) { continue }
+            $outputLines.Add($line)
+        }
 
-        if ($remaining.Trim() -eq "") {
+        $remaining = if ($outputLines.Count -gt 0) { ($outputLines -join "`n") + "`n" } else { "" }
+
+        # Mirrors install.sh's `tr -d '[:space:]-'` emptiness check, which also
+        # strips hyphens (e.g. a lone leftover "---" frontmatter fence), so both
+        # installers delete the same files on uninstall.
+        if (-not $remaining -or ($remaining -replace '[\s-]', '') -eq "") {
             Remove-Item $targetPath -Force
             Write-Log "removed (now empty) $targetPath"
         }
