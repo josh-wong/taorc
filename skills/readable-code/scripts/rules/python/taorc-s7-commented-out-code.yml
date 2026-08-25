@@ -1,0 +1,12 @@
+id: taorc-s7-commented-out-code-python
+language: Python
+severity: warning
+message: "[S7] Commented-out code"
+note: delete it; version control keeps whatever history is worth keeping
+rule:
+  kind: comment
+  any:
+    - regex: '^#\s*(for|if|elif|else|def|class|while|with|try|except|finally)\b.*:\s*$'
+    - regex: '^#\s*(return|import|from|raise|assert|print|break|continue|pass|yield|del)\b'
+    - regex: '^#\s*[A-Za-z_][\w.\[\]]*\s*[+\-*/%]?=\s*\S.*[^.!?]$'
+    - regex: '^#\s*[A-Za-z_][\w.]*\([^)]*\)\s*$'

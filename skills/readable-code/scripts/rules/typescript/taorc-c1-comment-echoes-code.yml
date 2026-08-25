@@ -1,0 +1,7 @@
+id: taorc-c1-comment-echoes-code-typescript
+language: TypeScript
+severity: warning
+message: "[C1] Comment echoes the code below it"
+note: taorc_lint.py scores this comment against the next statement (see v1-design-doc.md §8.2.1)
+rule:
+  kind: comment

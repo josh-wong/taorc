@@ -1,0 +1,10 @@
+{
+  "$comment": "Recommended ESLint rules for the structural checks taorc-lint does not implement (v1-design-doc.md §8.1's deliberate non-goal): nesting depth, function length, and complexity. taorc-lint covers the nine high-precision rules in catalog/rules.yaml; a mainstream linter already does structural checks well. This file is documentation, not an installed dependency -- extend your project's own ESLint config with it, e.g. `extends: ['./eslintrc.readability.json']` in a flat config's compat layer, or merge the `rules` block below into an existing .eslintrc. No agent following the readable-code skill runs or installs ESLint itself.",
+  "rules": {
+    "max-depth": ["warn", 4],
+    "max-lines-per-function": ["warn", { "max": 50, "skipBlankLines": true, "skipComments": true }],
+    "max-statements": ["warn", 25],
+    "complexity": ["warn", 10],
+    "max-params": ["warn", 5]
+  }
+}

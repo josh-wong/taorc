@@ -1,0 +1,15 @@
+id: taorc-n3-unit-free-name-python
+language: Python
+severity: warning
+message: "[N3] Name has no unit"
+note: add a unit or format suffix (for example _ms, _secs, _bytes) to the name
+rule:
+  kind: assignment
+  all:
+    - has:
+        field: left
+        kind: identifier
+        regex: '(delay|timeout|elapsed|duration|interval|expiry|ttl|size|length|limit)$'
+    - has:
+        field: right
+        kind: integer

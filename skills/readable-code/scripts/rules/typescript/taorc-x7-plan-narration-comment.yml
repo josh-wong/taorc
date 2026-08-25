@@ -1,0 +1,8 @@
+id: taorc-x7-plan-narration-comment-typescript
+language: TypeScript
+severity: warning
+message: "[X7] Plan narration comment"
+note: move this narration into your reply; leave only comments a maintainer would want
+rule:
+  kind: comment
+  regex: "(?i)^//\\s*(step\\s*\\d|first,|next,|then,|finally,|now (we|let's))"

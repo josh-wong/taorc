@@ -1,0 +1,12 @@
+id: taorc-s7-commented-out-code-typescript
+language: TypeScript
+severity: warning
+message: "[S7] Commented-out code"
+note: delete it; version control keeps whatever history is worth keeping
+rule:
+  kind: comment
+  any:
+    - regex: '^//\s*(for|if|else|function|while|switch|try|catch|finally)\b.*[({]\s*$'
+    - regex: '^//\s*(return|import|export|throw|break|continue|console\.)\b'
+    - regex: '^//\s*[A-Za-z_$][\w.\[\]]*\s*[+\-*/%]?=\s*\S.*[^.!?]$'
+    - regex: '^//\s*[A-Za-z_$][\w.]*\([^)]*\)\s*;?\s*$'

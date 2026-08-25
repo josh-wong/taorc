@@ -69,7 +69,8 @@ rules:
       whenever a more specific word is available and not misleading.
     chapter: 2
     severity: warning
-    lintable: false
+    lintable: true
+    lint_rule: taorc-n1-empty-word-identifier
     examples:
       - lang: go
         before: "func (c *Cache) Get(key string) (string, error)"
@@ -113,7 +114,8 @@ rules:
       not see at the call site.
     chapter: 2
     severity: warning
-    lintable: false
+    lintable: true
+    lint_rule: taorc-n3-unit-free-name
     examples:
       - lang: go
         before: "pollInterval := 5"
@@ -247,7 +249,8 @@ rules:
       cancel two negatives at every call site.
     chapter: 3
     severity: suggestion
-    lintable: false
+    lintable: true
+    lint_rule: taorc-n11-negated-boolean-name
     examples:
       - lang: csharp
         before: "bool skipCache = false;"
@@ -546,7 +549,8 @@ rules:
       line by adding something the code does not already express.
     chapter: 5
     severity: warning
-    lintable: false
+    lintable: true
+    lint_rule: taorc-c1-comment-echoes-code
     examples:
       - lang: java
         before: |
@@ -603,7 +607,8 @@ rules:
       outstanding, and no search will ever surface it.
     chapter: 5
     severity: suggestion
-    lintable: false
+    lintable: true
+    lint_rule: taorc-c4-placeholder-comment
     examples:
       - lang: python
         before: |
@@ -1493,7 +1498,8 @@ rules:
       you delete.
     chapter: 13
     severity: warning
-    lintable: false
+    lintable: true
+    lint_rule: taorc-s7-commented-out-code
     exceptions: >
       "Nothing calls it" is a claim about the whole world, and a repository
       only shows you part of it. Apply this to symbols private to their module;
@@ -1649,7 +1655,8 @@ rules:
       a red build nothing at all.
     chapter: 14
     severity: warning
-    lintable: false
+    lintable: true
+    lint_rule: taorc-t3-uninformative-test-name
     examples:
       - lang: python
         before: "def test_parse_2(): ..."
@@ -1829,7 +1836,8 @@ rules:
       only the comments a maintainer would want.
     chapter: 0
     severity: warning
-    lintable: false
+    lintable: true
+    lint_rule: taorc-x7-plan-narration-comment
     examples:
       - lang: python
         before: |
@@ -1853,7 +1861,8 @@ rules:
       splitting, not decorating.
     chapter: 0
     severity: warning
-    lintable: false
+    lintable: true
+    lint_rule: taorc-x8-banner-or-emoji
     examples:
       - lang: python
         before: |
