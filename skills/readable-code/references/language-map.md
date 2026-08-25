@@ -13,14 +13,25 @@ differs from what this file says, the project wins.
 
 ## Where the idiom differs
 
-| Rule  | Python                        | TypeScript / JavaScript    | Go                                   | Rust                            | Java / C#                       |
-| ----- | ----------------------------- | -------------------------- | ------------------------------------ | ------------------------------- | ------------------------------- |
-| `N7`  | `snake_case`, `UPPER` consts  | `camelCase`, `PascalCase`  | `MixedCaps`; case sets export        | `snake_case`, `CamelCase` types | `camelCase`, `PascalCase`       |
-| `N10` | `is_`/`has_` prefix           | `is`/`has`/`should` prefix | often a bare adjective: `ok`         | `is_`/`has_`, or bare adjective | `is`/`has`; C# also `Can`       |
-| `E4`  | `if items:`                   | `if (items.length)`        | `if len(items) > 0` is idiom         | `if !items.is_empty()`          | `if (items.isEmpty())` inverted |
-| `V4`  | no binding-level `const`      | `const` by default         | `const` only for compile-time values | `let` is immutable by default   | `final` / `readonly` where apt  |
-| `F5`  | guard clause + `raise`        | guard clause + `throw`     | `if err != nil { return ... }`       | `?` operator                    | guard clause + `throw`          |
-| `C14` | docstring, first line summary | JSDoc `/** ... */`         | `// FuncName ...` godoc form         | `///` rustdoc, `# Examples`     | Javadoc / XML doc comments      |
+Each cell is the form that satisfies the rule in that language, not a different
+rule. Where the last column pairs two forms with a slash, Java comes first and
+C# second — the two agree less often than sharing a column suggests, and the
+rows below are the ones where they part company.
+
+| Rule  | Python                        | TypeScript / JavaScript    | Go                                   | Rust                            | Java / C#                              |
+| ----- | ----------------------------- | -------------------------- | ------------------------------------ | ------------------------------- | -------------------------------------- |
+| `N7`  | `snake_case`, `UPPER` consts  | `camelCase`, `PascalCase`  | `MixedCaps`; case sets export        | `snake_case`, `CamelCase` types | `camelCase` / `PascalCase` methods     |
+| `N10` | `is_`/`has_` prefix           | `is`/`has`/`should` prefix | often a bare adjective: `ok`         | `is_`/`has_`, or bare adjective | `is`/`has`; C# also `Can`              |
+| `E4`  | `if items:`                   | `if (items.length)`        | `if len(items) > 0` is idiom         | `if !items.is_empty()`          | `items.isEmpty()` / `items.Count == 0` |
+| `V4`  | no binding-level `const`      | `const` by default         | `const` only for compile-time values | `let` is immutable by default   | `final` / `readonly`                   |
+| `F5`  | guard clause + `raise`        | guard clause + `throw`     | `if err != nil { return ... }`       | `?` operator                    | guard clause + `throw`                 |
+| `C14` | docstring, first line summary | JSDoc `/** ... */`         | `// FuncName ...` godoc form         | `///` rustdoc, `# Examples`     | Javadoc / XML doc comments             |
+
+Two of those pairings are worth stating outright, because sharing a column
+hides them. C# names methods `PascalCase` where Java names them `camelCase`.
+And C# collections have no `isEmpty()` at all: `List<T>` and arrays expose
+`Count`, LINQ offers `Any()`, and the types that do carry the concept spell it
+`IsEmpty`, a property rather than a method.
 
 ## Go
 

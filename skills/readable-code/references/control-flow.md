@@ -232,6 +232,13 @@ const host = useStaging ? STAGING_URL : BASE_URL;
 const endpoint = region ? `${host}/${region}` : host;
 ```
 
+What counts as an immutable binding varies, and one case catches people out:
+in JavaScript and TypeScript, `const` prevents rebinding but not mutation. A
+`const` array whose contents change still costs the reader everything `V4` is
+trying to save, because they must still find every place it is written. Reach
+for `readonly` types when the intent is that the value does not change.
+`references/language-map.md` covers the rest.
+
 **`V5` — exit directly instead of steering with a flag.** A boolean whose only
 job is telling a loop when to stop duplicates control flow the language already
 has, and delays the exit until the condition is next checked.

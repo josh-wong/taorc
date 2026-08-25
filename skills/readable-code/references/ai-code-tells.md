@@ -80,6 +80,8 @@ because the ledger reconciles nightly — is nowhere in the code.
 
 ### A helper with one caller is not reuse
 
+The giveaway is a name that restates the expression it wraps.
+
 ```typescript
 function isValidEmail(value: string): boolean {
   return EMAIL_PATTERN.test(value);
@@ -116,6 +118,9 @@ a three-line comprehension, a swap slot — `N2` explicitly permits it. The test
 is how long the value lives, not what it is called.
 
 ### The wrapped call that cannot fail
+
+Defensive code pattern-matches as careful, so it survives review by looking
+responsible. Ask what would actually raise.
 
 ```python
 try:

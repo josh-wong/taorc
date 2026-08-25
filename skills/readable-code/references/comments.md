@@ -96,11 +96,11 @@ that restates the signature in sentence form answers none of the questions a
 caller actually has. Empty input, duplicates, boundaries — say what happens.
 
 ```rust
-// Returns the number of words in this string.
+/// Returns the number of words in this string.
 fn word_count(s: &str) -> usize { ... }
 
-// Counts whitespace-delimited tokens; runs of whitespace count once,
-// and leading or trailing whitespace is ignored.
+/// Counts whitespace-delimited tokens; runs of whitespace count once,
+/// and leading or trailing whitespace is ignored.
 fn word_count(s: &str) -> usize { ... }
 ```
 
