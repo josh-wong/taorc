@@ -166,7 +166,10 @@ class BashInstallerTest(InstallerCase, unittest.TestCase):
             args.append("--detect")
         result = subprocess.run(args, cwd=project_dir, capture_output=True, text=True, check=False)
         if result.returncode != 0:
-            raise AssertionError(f"install.sh failed: {result.stderr}")
+            raise AssertionError(
+                f"install.sh exited {result.returncode}\n"
+                f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            )
         return result
 
 
@@ -197,7 +200,10 @@ class PowerShellInstallerTest(InstallerCase, unittest.TestCase):
             args.append("-Detect")
         result = subprocess.run(args, cwd=project_dir, capture_output=True, text=True, check=False)
         if result.returncode != 0:
-            raise AssertionError(f"install.ps1 failed: {result.stderr}")
+            raise AssertionError(
+                f"install.ps1 exited {result.returncode}\n"
+                f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            )
         return result
 
 

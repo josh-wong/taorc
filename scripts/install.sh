@@ -102,6 +102,25 @@ for agent in $AGENTS_LIST; do
     esac
 done
 
+# On Windows, a caller that doesn't itself run under MSYS (e.g. a Python
+# subprocess) may hand this script a native "C:\..." path, since args bypass
+# shell parsing and arrive with backslashes intact. Everything below (mkdir
+# -p "$(dirname ...)", string prefix-stripping, etc.) assumes '/', so
+# normalize any path-shaped argument once at the boundary. cygpath -u is the
+# canonical MSYS/Cygwin converter and passes non-Windows-shaped paths (e.g.
+# already-POSIX ones) through unchanged; on a non-Windows machine cygpath
+# does not exist at all, so this is a no-op there.
+normalize_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -u "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
+[ -n "$TARGET_DIR" ] && TARGET_DIR="$(normalize_path "$TARGET_DIR")"
+[ -n "$SOURCE_DIR" ] && SOURCE_DIR="$(normalize_path "$SOURCE_DIR")"
+
 if [ "$SCOPE" = "global" ]; then
     [ -n "$TARGET_DIR" ] && die "--dir cannot be combined with --global"
     TARGET_DIR="$HOME"
