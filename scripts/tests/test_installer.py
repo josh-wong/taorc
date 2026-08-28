@@ -78,8 +78,8 @@ class InstallerCase:
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = Path(tmp) / "proj"
             project_dir.mkdir()
-            result = self.run_install(project_dir)
-            self.assertEqual(result.returncode, 0, result.stderr)
+            install_output = self.run_install(project_dir)
+            self.assertEqual(install_output.returncode, 0, install_output.stderr)
             self.assert_placement_matrix(project_dir)
 
     def test_idempotent_reinstall(self):
@@ -164,13 +164,15 @@ class BashInstallerTest(InstallerCase, unittest.TestCase):
             args.append("--uninstall")
         if detect_only:
             args.append("--detect")
-        result = subprocess.run(args, cwd=project_dir, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
+        bash_proc = subprocess.run(
+            args, cwd=project_dir, capture_output=True, text=True, check=False
+        )
+        if bash_proc.returncode != 0:
             raise AssertionError(
-                f"install.sh exited {result.returncode}\n"
-                f"stdout: {result.stdout}\nstderr: {result.stderr}"
+                f"install.sh exited {bash_proc.returncode}\n"
+                f"stdout: {bash_proc.stdout}\nstderr: {bash_proc.stderr}"
             )
-        return result
+        return bash_proc
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")
@@ -198,13 +200,15 @@ class PowerShellInstallerTest(InstallerCase, unittest.TestCase):
             args.append("-Uninstall")
         if detect_only:
             args.append("-Detect")
-        result = subprocess.run(args, cwd=project_dir, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
+        pwsh_proc = subprocess.run(
+            args, cwd=project_dir, capture_output=True, text=True, check=False
+        )
+        if pwsh_proc.returncode != 0:
             raise AssertionError(
-                f"install.ps1 exited {result.returncode}\n"
-                f"stdout: {result.stdout}\nstderr: {result.stderr}"
+                f"install.ps1 exited {pwsh_proc.returncode}\n"
+                f"stdout: {pwsh_proc.stdout}\nstderr: {pwsh_proc.stderr}"
             )
-        return result
+        return pwsh_proc
 
 
 if __name__ == "__main__":

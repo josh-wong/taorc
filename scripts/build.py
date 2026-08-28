@@ -126,14 +126,22 @@ def main() -> int:
     print(f"Rendered managed block for v{version} ({tokens} tokens, within budget).")
 
     for relative_path, frontmatter in ADAPTER_TARGETS:
-        apply_managed_block(REPO_ROOT / relative_path, block, frontmatter)
+        try:
+            apply_managed_block(REPO_ROOT / relative_path, block, frontmatter)
+        except ValueError as err:
+            print(f"error: {err}", file=sys.stderr)
+            return 1
         print(f"Updated {relative_path}")
 
     for relative_path in MANIFEST_TARGETS:
         write_manifest_version(REPO_ROOT / relative_path, version)
         print(f"Synced version in {relative_path}")
 
-    sync_github_skills_copy()
+    try:
+        sync_github_skills_copy()
+    except FileNotFoundError as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
     print(f"Synced {GITHUB_SKILLS_COPY[1]} from {GITHUB_SKILLS_COPY[0]}")
 
     return 0
