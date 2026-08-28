@@ -128,7 +128,7 @@ def main() -> int:
     for relative_path, frontmatter in ADAPTER_TARGETS:
         try:
             apply_managed_block(REPO_ROOT / relative_path, block, frontmatter)
-        except ValueError as err:
+        except (ValueError, OSError) as err:
             print(f"error: {err}", file=sys.stderr)
             return 1
         print(f"Updated {relative_path}")
@@ -139,7 +139,7 @@ def main() -> int:
 
     try:
         sync_github_skills_copy()
-    except FileNotFoundError as err:
+    except OSError as err:
         print(f"error: {err}", file=sys.stderr)
         return 1
     print(f"Synced {GITHUB_SKILLS_COPY[1]} from {GITHUB_SKILLS_COPY[0]}")
