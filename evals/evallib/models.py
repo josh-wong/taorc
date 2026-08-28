@@ -159,7 +159,13 @@ def call_openai_chat(spec: ModelSpec, system: str, user: str, sampler: SamplerSe
             "top_p": sampler.top_p,
         },
     )
-    return response["choices"][0]["message"]["content"]
+    try:
+        return response["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as error:
+        raise ModelCallError(
+            f"{spec.slot}: unexpected response shape from {base_url}/chat/completions "
+            f"(no completion choices -- may be content-filtered): {response!r}"
+        ) from error
 
 
 def call_ollama(model_id: str, system: str, user: str, sampler: SamplerSettings) -> str:
@@ -182,7 +188,12 @@ def call_ollama(model_id: str, system: str, user: str, sampler: SamplerSettings)
             },
         },
     )
-    return response["message"]["content"]
+    try:
+        return response["message"]["content"]
+    except KeyError as error:
+        raise ModelCallError(
+            f"ollama {model_id}: unexpected response shape: {response!r}"
+        ) from error
 
 
 PROVIDER_CALLERS = {

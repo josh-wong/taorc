@@ -227,7 +227,7 @@ def summarize_guardrail(scores: dict) -> dict:
         for model_slot, by_condition in by_model.items():
             baseline = by_condition.get("baseline", {}).get("diff_lines_vs_starter")
             skill = by_condition.get("skill", {}).get("diff_lines_vs_starter")
-            if not baseline:
+            if not baseline or skill is None:
                 continue
             inflation_by_model.setdefault(model_slot, []).append((skill - baseline) / baseline)
 
