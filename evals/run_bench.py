@@ -47,10 +47,6 @@ def run_one(
 
     system_prompt = system_prompt_for(condition, spec.skill_artifact)
     user_prompt = build_user_prompt(scenario)
-    target_dir = out_dir / "raw" / scenario.id / model_slot
-    target_dir.mkdir(parents=True, exist_ok=True)
-    completion_path = target_dir / f"{condition}{output_extension(scenario)}"
-    metadata_path = target_dir / f"{condition}.meta.json"
 
     if dry_run:
         artifact_label = spec.skill_artifact if condition == "skill" else "baseline"
@@ -58,6 +54,11 @@ def run_one(
         print(f"  system prompt: {len(system_prompt)} chars ({artifact_label})")
         print(f"  user prompt: {len(user_prompt)} chars")
         return
+
+    target_dir = out_dir / "raw" / scenario.id / model_slot
+    target_dir.mkdir(parents=True, exist_ok=True)
+    completion_path = target_dir / f"{condition}{output_extension(scenario)}"
+    metadata_path = target_dir / f"{condition}.meta.json"
 
     try:
         completion = generate(spec, system_prompt, user_prompt, DEFAULT_SAMPLER)

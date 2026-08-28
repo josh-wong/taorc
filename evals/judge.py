@@ -53,10 +53,13 @@ RUBRIC_CATEGORIES = {
 
 
 def judge_model_for(generation_model_slot: str) -> ModelSpec:
-    for spec in MODEL_MATRIX:
-        if spec.slot != generation_model_slot:
-            return spec
-    raise ValueError("MODEL_MATRIX needs at least two models for judging")
+    """Picks uniformly at random among the other matrix slots, so self-
+    preference bias doesn't concentrate on whichever model happens to be
+    first in MODEL_MATRIX (design doc §10.2)."""
+    candidates = [spec for spec in MODEL_MATRIX if spec.slot != generation_model_slot]
+    if not candidates:
+        raise ValueError("MODEL_MATRIX needs at least two models for judging")
+    return random.choice(candidates)
 
 
 def build_judge_prompt(task_title: str, version_a: str, version_b: str) -> str:

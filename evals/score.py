@@ -118,19 +118,49 @@ def nesting_depth(code: str) -> tuple[int, float] | tuple[None, None]:
     return max(depths), round(sum(depths) / len(depths), 2)
 
 
+def _assignment_target_names(target: ast.AST) -> list[str]:
+    """Flattens a (possibly tuple/list-unpacking) assignment target down to
+    the plain names bound by it, matching the ast-grep rule's "left" field
+    of an assignment -- not a for-loop target, an except-as name, or an
+    attribute access, none of which the real N1 rule inspects."""
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [name for element in target.elts for name in _assignment_target_names(element)]
+    return []
+
+
+def _parameter_names(args: ast.arguments) -> list[str]:
+    positional = [*args.posonlyargs, *args.args, *args.kwonlyargs]
+    names = [arg.arg for arg in positional]
+    if args.vararg:
+        names.append(args.vararg.arg)
+    if args.kwarg:
+        names.append(args.kwarg.arg)
+    return names
+
+
 def empty_word_count(code: str) -> int:
-    """Counts identifiers, not substring matches -- a raw regex over the
-    whole file would also match "value" inside a comment or a docstring,
-    which isn't an empty-word *name* at all."""
+    """Counts identifiers only where the N1 ast-grep rule actually looks --
+    an assignment's left-hand target, or a function parameter. A raw name
+    scan would also flag a for-loop variable or an attribute access, which
+    isn't what taorc-lint's own N1 rule treats as an empty word."""
     try:
-        tokens = list(tokenize.generate_tokens(StringIO(code).readline))
-    except (tokenize.TokenizeError, SyntaxError, IndentationError):
+        tree = ast.parse(code)
+    except SyntaxError:
         return len(EMPTY_WORD_PATTERN.findall(code))
-    return sum(
-        1
-        for tok in tokens
-        if tok.type == tokenize.NAME and EMPTY_WORD_PATTERN.fullmatch(tok.string)
-    )
+
+    names: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                names.extend(_assignment_target_names(target))
+        elif isinstance(node, ast.AnnAssign) and node.target is not None:
+            names.extend(_assignment_target_names(node.target))
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            names.extend(_parameter_names(node.args))
+
+    return sum(1 for name in names if EMPTY_WORD_PATTERN.fullmatch(name))
 
 
 def run_lint(code: str, suffix: str) -> list[dict] | None:
