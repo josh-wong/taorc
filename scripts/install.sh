@@ -42,7 +42,42 @@ REPO_SLUG="josh-wong/taorc"
 ALL_AGENTS="claude copilot cursor cline windsurf gemini agents"
 
 usage() {
-    sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'
+    # Not derived from $0 (e.g. via sed): the documented install method is
+    # `curl ... | bash`, where $0 is "bash", not this file's path, so
+    # anything reading $0 as a file silently breaks for that exact flow.
+    cat <<'EOF'
+taorc installer -- see v1-design-doc.md §6.3 and §9 item 8.
+
+Places the taorc managed block (templates/agent-block.md, wrapped in
+<!-- taorc:begin/end --> markers) into every instructions file an installed
+harness reads, plus a copy of the skill directory for harnesses that read
+SKILL.md directly. Never touches anything outside the markers in a file
+that already exists, so it is safe to run against a project's own
+AGENTS.md / CLAUDE.md.
+
+Usage:
+  install.sh [--project | --global] [--dir PATH] [--source PATH]
+              [--agents LIST] [--detect] [--uninstall] [--help]
+
+  --project        Install into the current project (default). Combine
+                    with --dir to target a different project directory.
+  --global          Install into $HOME instead of a project.
+  --dir PATH        Target directory for --project (default: $PWD).
+  --source PATH     A local taorc checkout to install from, instead of
+                    downloading one. Mainly for testing and offline use.
+  --agents LIST     Comma-separated subset of: claude, copilot, cursor,
+  --agents=LIST     cline, windsurf, gemini, agents. Default: all.
+  --detect          Only refresh adapters that are already installed;
+                    never create a new one.
+  --uninstall       Remove the taorc managed block from every adapter and
+                    delete the skill directory copies. Leaves any content
+                    outside the markers untouched.
+  --help            Show this message.
+
+Environment:
+  TAORC_REF         Git ref to download when --source is not given.
+                    Default: main.
+EOF
 }
 
 log() {
@@ -264,7 +299,16 @@ apply_block() {
         return
     fi
 
-    if grep -qF "$BEGIN_PREFIX" "$target" && grep -qF "$END_MARKER" "$target"; then
+    has_begin=0
+    grep -qF "$BEGIN_PREFIX" "$target" && has_begin=1
+    has_end=0
+    grep -qF "$END_MARKER" "$target" && has_end=1
+
+    if [ "$has_begin" != "$has_end" ]; then
+        die "$target: has a taorc managed-block begin marker without a matching end marker (or vice versa) -- fix the file by hand before running install.sh"
+    fi
+
+    if [ "$has_begin" = "1" ] && [ "$has_end" = "1" ]; then
         awk -v beginp="$BEGIN_PREFIX" -v endm="$END_MARKER" -v blockfile="$BLOCK_FILE" '
             BEGIN {
                 block = ""
@@ -295,8 +339,16 @@ remove_block() {
     target="$1"
     [ -f "$target" ] || return
 
-    if ! grep -qF "$BEGIN_PREFIX" "$target"; then
+    has_begin=0
+    grep -qF "$BEGIN_PREFIX" "$target" && has_begin=1
+    has_end=0
+    grep -qF "$END_MARKER" "$target" && has_end=1
+
+    if [ "$has_begin" = "0" ] && [ "$has_end" = "0" ]; then
         return
+    fi
+    if [ "$has_begin" != "$has_end" ]; then
+        die "$target: has a taorc managed-block begin marker without a matching end marker (or vice versa) -- fix the file by hand before running --uninstall"
     fi
 
     awk -v beginp="$BEGIN_PREFIX" -v endm="$END_MARKER" '
@@ -329,6 +381,18 @@ apply_skill_copy() {
         return
     fi
     mkdir -p "$(dirname "$dest")"
+
+    # Guard against --source and the install target overlapping (e.g. running
+    # against a taorc checkout's own directory by mistake): resolve both to
+    # absolute paths and refuse to rm -rf a dest that is the source tree or
+    # sits inside it, rather than deleting part of what we're about to copy
+    # from.
+    dest_abs="$(cd "$(dirname "$dest")" && pwd)/$(basename "$dest")"
+    source_abs="$(cd "$SOURCE_DIR" && pwd)"
+    case "$dest_abs/" in
+        "$source_abs"/*) die "refusing to remove $dest: it is inside --source ($SOURCE_DIR)" ;;
+    esac
+
     rm -rf "$dest"
     cp -R "$SOURCE_DIR/skills/readable-code" "$dest"
     find "$dest" -name '__pycache__' -type d -prune -exec rm -rf {} +

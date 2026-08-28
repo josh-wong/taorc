@@ -39,7 +39,14 @@ from pathlib import Path
 
 import jsonschema
 import yaml
-from build import AGENT_BLOCK_TOKEN_BUDGET, BLOCK_BEGIN, GITHUB_SKILLS_COPY, render_managed_block
+from build import (
+    ADAPTER_TARGETS,
+    AGENT_BLOCK_TOKEN_BUDGET,
+    BLOCK_BEGIN,
+    GITHUB_SKILLS_COPY,
+    MANIFEST_TARGETS,
+    render_managed_block,
+)
 from lib import (
     CATEGORY_PREFIXES,
     REPO_ROOT,
@@ -476,12 +483,8 @@ def check_budgets(version: str) -> list[str]:
 def check_version_sync(version: str) -> list[str]:
     errors = []
 
-    for manifest_path in [
-        REPO_ROOT / ".claude-plugin" / "plugin.json",
-        REPO_ROOT / ".claude-plugin" / "marketplace.json",
-        REPO_ROOT / ".codex-plugin" / "plugin.json",
-        REPO_ROOT / "gemini-extension.json",
-    ]:
+    for relative_path in MANIFEST_TARGETS:
+        manifest_path = REPO_ROOT / relative_path
         if not manifest_path.exists():
             continue
         current_version = read_manifest_version(manifest_path)
@@ -493,16 +496,7 @@ def check_version_sync(version: str) -> list[str]:
 
     # Derived from build.BLOCK_BEGIN so the two never drift apart.
     marker_pattern = re.compile(re.escape(BLOCK_BEGIN).replace(r"\{version\}", r"([\d.]+)"))
-    for relative_path in [
-        "AGENTS.md",
-        "CLAUDE.md",
-        "GEMINI.md",
-        ".github/copilot-instructions.md",
-        ".github/instructions/readable-code.instructions.md",
-        ".cursor/rules/readable-code.mdc",
-        ".clinerules/readable-code.md",
-        ".windsurf/rules/readable-code.md",
-    ]:
+    for relative_path, _frontmatter in ADAPTER_TARGETS:
         path = REPO_ROOT / relative_path
         if not path.exists():
             continue

@@ -7,6 +7,7 @@ every generated artifact listed in v1-design-doc.md §6.1.
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -134,7 +135,11 @@ def main() -> int:
         print(f"Updated {relative_path}")
 
     for relative_path in MANIFEST_TARGETS:
-        write_manifest_version(REPO_ROOT / relative_path, version)
+        try:
+            write_manifest_version(REPO_ROOT / relative_path, version)
+        except (json.JSONDecodeError, OSError) as err:
+            print(f"error: {relative_path}: {err}", file=sys.stderr)
+            return 1
         print(f"Synced version in {relative_path}")
 
     try:

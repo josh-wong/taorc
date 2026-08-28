@@ -92,6 +92,9 @@ $workDir = New-Item -ItemType Directory -Path (Join-Path ([System.IO.Path]::GetT
 
 try {
     if (-not $Source) {
+        if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
+            Fail "tar is required to unpack taorc (or pass -Source for an offline install)"
+        }
         $ref = if ($env:TAORC_REF) { $env:TAORC_REF } else { "main" }
         $downloadDir = New-Item -ItemType Directory -Path (Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid()))
         $archiveUrl = "https://github.com/$RepoSlug/archive/refs/heads/$ref.tar.gz"
@@ -214,6 +217,10 @@ applyTo: "**/*"
         $hasBegin = $existingLines | Where-Object { $_.Contains($beginPrefix) } | Select-Object -First 1
         $hasEnd = $existingLines | Where-Object { $_.Contains($endMarker) } | Select-Object -First 1
 
+        if (($hasBegin -and -not $hasEnd) -or ($hasEnd -and -not $hasBegin)) {
+            Fail "$targetPath`: has a taorc managed-block begin marker without a matching end marker (or vice versa) -- fix the file by hand before running install.ps1"
+        }
+
         if ($hasBegin -and $hasEnd) {
             # Line-based, like install.sh's awk equivalent: a line containing a
             # marker is dropped in its entirety, not sliced at the marker text,
@@ -252,7 +259,11 @@ applyTo: "**/*"
         $existingLines = Get-Content -LiteralPath $targetPath
         if (-not $existingLines) { return }
         $hasBegin = $existingLines | Where-Object { $_.Contains($beginPrefix) } | Select-Object -First 1
-        if (-not $hasBegin) { return }
+        $hasEnd = $existingLines | Where-Object { $_.Contains($endMarker) } | Select-Object -First 1
+        if (-not $hasBegin -and -not $hasEnd) { return }
+        if (($hasBegin -and -not $hasEnd) -or ($hasEnd -and -not $hasBegin)) {
+            Fail "$targetPath`: has a taorc managed-block begin marker without a matching end marker (or vice versa) -- fix the file by hand before running -Uninstall"
+        }
 
         $outputLines = New-Object System.Collections.Generic.List[string]
         $inBlock = $false
@@ -300,7 +311,20 @@ applyTo: "**/*"
         if ($parent -and -not (Test-Path $parent)) {
             New-Item -ItemType Directory -Path $parent -Force | Out-Null
         }
-        if (Test-Path $destPath) { Remove-Item $destPath -Recurse -Force }
+
+        # Guard against -Source and the install target overlapping (e.g.
+        # running against a taorc checkout's own directory by mistake):
+        # refuse to remove a destPath that is the source tree or sits
+        # inside it, rather than deleting part of what we're about to copy
+        # from. Mirrors install.sh's equivalent check.
+        if (Test-Path $destPath) {
+            $destAbs = (Resolve-Path -LiteralPath $destPath).Path
+            $sourceAbs = (Resolve-Path -LiteralPath $Source).Path
+            if ($destAbs -eq $sourceAbs -or $destAbs.StartsWith($sourceAbs + [System.IO.Path]::DirectorySeparatorChar)) {
+                Fail "refusing to remove $destPath`: it is inside -Source ($Source)"
+            }
+            Remove-Item $destPath -Recurse -Force
+        }
         Copy-Item (Join-Path $Source "skills/readable-code") $destPath -Recurse -Force
         Get-ChildItem -Path $destPath -Recurse -Force -Directory -Filter "__pycache__" |
             ForEach-Object { Remove-Item $_.FullName -Recurse -Force }

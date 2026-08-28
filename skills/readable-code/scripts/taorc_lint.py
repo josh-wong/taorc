@@ -134,7 +134,26 @@ class Finding(NamedTuple):
 
 
 def find_ast_grep() -> str | None:
-    return shutil.which("ast-grep") or shutil.which("sg")
+    found = shutil.which("ast-grep")
+    if found:
+        return found
+
+    # ast-grep's own binary is sometimes named "sg" (e.g. `cargo install
+    # ast-grep`), but plain "sg" is also shadow-utils' unrelated
+    # "execute as group" command on most Linux/macOS systems. Confirm the
+    # candidate is really ast-grep before trusting it, or a stock "sg"
+    # binary silently swallows every lint run instead of the documented
+    # skip-with-install-hint.
+    candidate = shutil.which("sg")
+    if not candidate:
+        return None
+    try:
+        version = subprocess.run(
+            [candidate, "--version"], capture_output=True, text=True, check=False
+        )
+    except OSError:
+        return None
+    return candidate if "ast-grep" in version.stdout.lower() else None
 
 
 @cache
@@ -253,7 +272,13 @@ def run_ast_grep(ast_grep_bin: str, paths: list[Path]) -> list[dict[str, Any]]:
     )
     if not completed.stdout.strip():
         return []
-    return json.loads(completed.stdout)
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        # A non-zero exit (bad sgconfig.yml, bad rule file) can still leave
+        # partial or non-JSON text on stdout. Treat it the same as ast-grep
+        # being absent -- never block a build over a broken optional tool.
+        return []
 
 
 def catalog_id_from_match(match: dict[str, Any]) -> str | None:
