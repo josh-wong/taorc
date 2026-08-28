@@ -6,7 +6,22 @@ Agents optimize for producing something that satisfies a request and passes revi
 
 ## Status
 
-This repository is in early development. The [product requirements doc](v1-product-requirements-doc.md) and [design doc](v1-design-doc.md) are approved and describe the full v1 scope: an 85-rule catalog, a hand-written skill package, generated adapters for around ten agent harnesses, a stdlib-only linter (`taorc-lint`), and a published cross-model eval suite. The catalog, the skill package, and the linter are complete; the generated adapters, the installers, and the eval suite have not shipped yet, so there is still no packaged install from this repo today. Once the adapters and installers exist, this section will be replaced with install instructions and benchmark results.
+This repository is in early development. The [product requirements doc](v1-product-requirements-doc.md) and [design doc](v1-design-doc.md) are approved and describe the full v1 scope: an 85-rule catalog, a hand-written skill package, generated adapters for around ten agent harnesses, a stdlib-only linter (`taorc-lint`), and a published cross-model eval suite. The catalog, the skill package, the linter, and the generated adapters and installers are complete; the eval suite and the v1.0.0 release have not shipped yet, so the benchmark numbers referenced in the design doc are not published here yet.
+
+## Install
+
+Pick the row that matches how the target harness reads instructions or skills.
+
+| Target | Command |
+| --- | --- |
+| Agent Skills runtimes | `npx skills add josh-wong/taorc` |
+| Claude Code plugin | `claude plugin marketplace add josh-wong/taorc` then `claude plugin install taorc@taorc` |
+| Everything else (Copilot, Cursor, Codex, Cline, Windsurf, Gemini CLI, and similar) | `curl -fsSL https://raw.githubusercontent.com/josh-wong/taorc/main/scripts/install.sh \| bash` (`scripts/install.ps1` on Windows) |
+| Any other LLM | Paste [`prompts/system-prompt.md`](prompts/system-prompt.md) into the system prompt |
+
+The `curl \| bash` / `install.ps1` installer defaults to `--project` scope (installs into the current directory) and accepts `--global`, `--agents=<comma-list>` to install a subset of harnesses, `--detect` to refresh only adapters already installed, and `--uninstall` to remove every taorc-managed block and skill copy it placed — see `scripts/install.sh --help` for the full flag reference. It only ever inserts or replaces text between `<!-- taorc:begin -->` / `<!-- taorc:end -->` markers, so it never touches the rest of an existing `AGENTS.md` or `CLAUDE.md`.
+
+Which harnesses have been verified end-to-end by hand, on which versions, is recorded in [`docs/harness-verification.md`](docs/harness-verification.md).
 
 ## Why this and not a general clean-code skill
 

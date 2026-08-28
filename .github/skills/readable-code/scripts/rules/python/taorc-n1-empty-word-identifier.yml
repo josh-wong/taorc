@@ -1,0 +1,14 @@
+id: taorc-n1-empty-word-identifier-python
+language: Python
+severity: warning
+message: "[N1] Empty-word identifier"
+note: rename to a word that says what is actually stored or returned
+rule:
+  kind: identifier
+  regex: '^(data|result|output|value|item|obj|info)$'
+  any:
+    - inside:
+        kind: assignment
+        field: left
+    - inside:
+        kind: parameters

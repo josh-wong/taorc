@@ -1,0 +1,15 @@
+id: taorc-n11-negated-boolean-name-python
+language: Python
+severity: warning
+message: "[N11] Negated boolean name"
+note: rename so the boolean reads positively (for example is_ready instead of is_not_ready)
+rule:
+  kind: assignment
+  all:
+    - has:
+        field: left
+        kind: identifier
+        regex: "^(?i:is_?|has_?|can_?)?(?i:not|no|non|dont|cant|disable)(_|[A-Z]|$)"
+    - has:
+        field: right
+        regex: '^(True|False)$'

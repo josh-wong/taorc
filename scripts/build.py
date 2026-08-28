@@ -2,14 +2,13 @@
 """Generate managed adapter blocks and manifests from the catalog and templates.
 
 Reads VERSION, catalog/rules.yaml, and templates/agent-block.md, and writes
-every generated artifact listed in v1-design-doc.md §6.1. ADAPTER_TARGETS is
-empty until the adapter files exist to receive a managed block (MS5) — until
-then this script renders and budget-checks the block without writing it
-anywhere, so the generation path is exercised well before it has a target.
+every generated artifact listed in v1-design-doc.md §6.1.
 """
 
 from __future__ import annotations
 
+import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -19,13 +18,45 @@ BLOCK_BEGIN = "<!-- taorc:begin v{version} -->"
 BLOCK_END = "<!-- taorc:end -->"
 AGENT_BLOCK_TOKEN_BUDGET = 700
 
-# (target path relative to repo root, frontmatter template or None)
-# Populated in MS5 once the adapter files exist to receive a managed block.
-ADAPTER_TARGETS: list[tuple[str, str | None]] = []
+CURSOR_FRONTMATTER = """---
+description: Write, comment, and review code so the next reader understands it in the least time.
+alwaysApply: true
+---
+
+"""
+
+COPILOT_INSTRUCTIONS_FRONTMATTER = """---
+applyTo: "**/*"
+---
+
+"""
+
+# (target path relative to repo root, frontmatter to seed a new file with, or
+# None for a plain managed block). See v1-design-doc.md §6.1's output table.
+ADAPTER_TARGETS: list[tuple[str, str | None]] = [
+    ("AGENTS.md", None),
+    ("CLAUDE.md", None),
+    ("GEMINI.md", None),
+    (".cursor/rules/readable-code.mdc", CURSOR_FRONTMATTER),
+    (".github/copilot-instructions.md", None),
+    (".github/instructions/readable-code.instructions.md", COPILOT_INSTRUCTIONS_FRONTMATTER),
+    (".clinerules/readable-code.md", None),
+    (".windsurf/rules/readable-code.md", None),
+]
 
 # Manifest files whose "version" field must track VERSION.
-# Populated once the manifests exist (.claude-plugin/, .codex-plugin/, gemini-extension.json).
-MANIFEST_TARGETS: list[str] = []
+MANIFEST_TARGETS: list[str] = [
+    ".claude-plugin/plugin.json",
+    ".claude-plugin/marketplace.json",
+    ".codex-plugin/plugin.json",
+    "gemini-extension.json",
+]
+
+# The repo's own dogfooding copy of the skill for harnesses that only look
+# under .github/skills/ (Copilot). A copy, never a symlink — see
+# v1-design-doc.md §14.2 for why a Windows checkout without symlink support
+# would silently turn this into a text file containing a path.
+GITHUB_SKILLS_COPY = ("skills/readable-code", ".github/skills/readable-code")
 
 
 def render_managed_block(version: str, template_text: str) -> str:
@@ -66,6 +97,18 @@ def apply_managed_block(path: Path, block: str, frontmatter: str | None = None) 
     path.write_text(updated, encoding="utf-8")
 
 
+def sync_github_skills_copy() -> None:
+    source_dir = REPO_ROOT / GITHUB_SKILLS_COPY[0]
+    dest_dir = REPO_ROOT / GITHUB_SKILLS_COPY[1]
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
+    shutil.copytree(
+        source_dir,
+        dest_dir,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store"),
+    )
+
+
 def main() -> int:
     version = read_version()
     template_path = REPO_ROOT / "templates" / "agent-block.md"
@@ -83,15 +126,28 @@ def main() -> int:
 
     print(f"Rendered managed block for v{version} ({tokens} tokens, within budget).")
 
-    if not ADAPTER_TARGETS:
-        print("No adapter targets registered yet — nothing to write (see MS5).")
     for relative_path, frontmatter in ADAPTER_TARGETS:
-        apply_managed_block(REPO_ROOT / relative_path, block, frontmatter)
+        try:
+            apply_managed_block(REPO_ROOT / relative_path, block, frontmatter)
+        except (ValueError, OSError) as err:
+            print(f"error: {err}", file=sys.stderr)
+            return 1
         print(f"Updated {relative_path}")
 
     for relative_path in MANIFEST_TARGETS:
-        write_manifest_version(REPO_ROOT / relative_path, version)
+        try:
+            write_manifest_version(REPO_ROOT / relative_path, version)
+        except (json.JSONDecodeError, OSError) as err:
+            print(f"error: {relative_path}: {err}", file=sys.stderr)
+            return 1
         print(f"Synced version in {relative_path}")
+
+    try:
+        sync_github_skills_copy()
+    except OSError as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
+    print(f"Synced {GITHUB_SKILLS_COPY[1]} from {GITHUB_SKILLS_COPY[0]}")
 
     return 0
 

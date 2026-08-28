@@ -45,3 +45,28 @@ jobs:
 
       - name: Run the CI validation gate
         run: python scripts/validate.py
+
+  # §9 items 8-9: installer behavior and placement-matrix tests need to pass
+  # on all three OSes, since install.sh and install.ps1 each have to work
+  # standalone -- a Linux-only pass would never catch a bash-ism install.ps1
+  # doesn't share, or vice versa. A separate job from build-and-test above so
+  # a placement-matrix failure on one OS doesn't block the (cheaper, faster)
+  # drift and validation checks from reporting on the other two.
+  installer-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run installer and placement-matrix tests
+        run: python scripts/tests/test_installer.py -v
