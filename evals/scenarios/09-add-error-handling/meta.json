@@ -1,0 +1,10 @@
+{
+  "id": "09-add-error-handling",
+  "title": "Add error handling to existing code",
+  "mode": "write",
+  "language": "python",
+  "probes": ["F", "C"],
+  "starter_files": ["starter/config_loader.py"],
+  "output_file": "config_loader.py",
+  "measure_diff_size": true
+}

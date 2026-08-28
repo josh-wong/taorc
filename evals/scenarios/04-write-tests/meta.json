@@ -1,0 +1,10 @@
+{
+  "id": "04-write-tests",
+  "title": "Write tests for a given module",
+  "mode": "write",
+  "language": "python",
+  "probes": ["T"],
+  "starter_files": ["starter/discount.py"],
+  "output_file": "test_discount.py",
+  "measure_diff_size": false
+}

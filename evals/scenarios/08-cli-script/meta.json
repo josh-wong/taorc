@@ -1,0 +1,10 @@
+{
+  "id": "08-cli-script",
+  "title": "Write a CLI script",
+  "mode": "write",
+  "language": "python",
+  "probes": ["S", "C"],
+  "starter_files": [],
+  "output_file": "dedupe_lines.py",
+  "measure_diff_size": false
+}

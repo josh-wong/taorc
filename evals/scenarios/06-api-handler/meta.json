@@ -1,0 +1,10 @@
+{
+  "id": "06-api-handler",
+  "title": "Write an API request handler",
+  "mode": "write",
+  "language": "python",
+  "probes": ["F", "E"],
+  "starter_files": [],
+  "output_file": "handlers.py",
+  "measure_diff_size": false
+}

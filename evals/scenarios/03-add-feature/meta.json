@@ -1,0 +1,10 @@
+{
+  "id": "03-add-feature",
+  "title": "Add a feature to an existing file",
+  "mode": "write",
+  "language": "python",
+  "probes": ["X2"],
+  "starter_files": ["starter/cart.py"],
+  "output_file": "cart.py",
+  "measure_diff_size": true
+}
