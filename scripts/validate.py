@@ -646,7 +646,10 @@ def check_github_skills_copy_sync() -> list[str]:
     for relative_path in sorted(source_files.keys() - dest_files.keys()):
         errors.append(f"{GITHUB_SKILLS_COPY[1]}/{relative_path}: missing from GitHub skills copy")
     for relative_path in sorted(dest_files.keys() - source_files.keys()):
-        errors.append(f"{GITHUB_SKILLS_COPY[1]}/{relative_path}: not present in {GITHUB_SKILLS_COPY[0]}")
+        errors.append(
+            f"{GITHUB_SKILLS_COPY[1]}/{relative_path}: not present in "
+            f"{GITHUB_SKILLS_COPY[0]}"
+        )
     for relative_path in sorted(source_files.keys() & dest_files.keys()):
         if source_files[relative_path].read_bytes() != dest_files[relative_path].read_bytes():
             errors.append(
