@@ -18,14 +18,16 @@ produce.
 - `run_bench.py` — calls every scenario × condition × model in the matrix and
   writes raw completions.
 - `score.py` — the automated scoring track (`taorc-lint` findings per 100
-  LOC, comment ratio, nesting depth, empty-word count, diff size).
-- `judge.py` — the LLM-judge track (blind pairwise preference, per-category
-  rubric).
+  LOC, comment ratio and why-comment share, nesting depth, empty-word count,
+  diff size).
+- `judge.py` — the LLM-judge track (blind pairwise preference, plus a
+  per-category N/C/F/S/T rubric aggregated into a skill-vs-baseline delta).
 - `run_smoke_ollama.py` — the unpublished local smoke test for
   `prompts/system-prompt-mini.md` (§14.3). Never fed into `score.py` or
   `RESULTS.md`.
 - `results/<date>/` — one directory per run: `raw/` (every completion plus
-  its generation metadata), `scores.json`, `judgments/`, and `RESULTS.md`.
+  its generation metadata), `scores.json`, `judgments/`, `judge_summary.json`,
+  and `RESULTS.md`.
 
 ## Running a full matrix
 

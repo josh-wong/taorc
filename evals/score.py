@@ -5,7 +5,7 @@ Reads the raw completions written by run_bench.py and computes, per
 scenario/model/condition:
 
   - taorc-lint findings per 100 LOC                        -> M1
-  - comment-to-code ratio
+  - comment-to-code ratio, and the share of those comments that explain why
   - mean and max nesting depth
   - empty-word identifier count (N1's own word list)
   - diff size vs. the starter file, on scenarios that measure it -> M3
@@ -74,16 +74,48 @@ def count_loc(code: str) -> int:
     return sum(1 for line in code.splitlines() if line.strip())
 
 
-def comment_ratio(code: str) -> float | None:
+def count_comments(code: str) -> int | None:
+    """Number of `#` comments in the file, or None if it doesn't tokenize.
+    A line holds at most one comment token, so this doubles as a
+    comment-line count for the why-comment share below."""
     try:
         tokens = list(tokenize.generate_tokens(StringIO(code).readline))
     except (tokenize.TokenizeError, SyntaxError, IndentationError):
         return None
-    comment_lines = sum(1 for tok in tokens if tok.type == tokenize.COMMENT)
+    return sum(1 for tok in tokens if tok.type == tokenize.COMMENT)
+
+
+def comment_ratio(code: str) -> float | None:
+    comment_count = count_comments(code)
+    if comment_count is None:
+        return None
     code_lines = count_loc(code)
     if code_lines == 0:
         return None
-    return round(comment_lines / code_lines, 3)
+    return round(comment_count / code_lines, 3)
+
+
+# The rules that fire on a comment for saying what the code already says:
+# C1 (echoes the next statement), X7 (plan narration), X8 (banner/divider).
+WHAT_COMMENT_RULES = frozenset({"C1", "X7", "X8"})
+
+
+def why_comment_share(code: str, findings: list[dict] | None) -> float | None:
+    """Of the file's comments, the fraction that explain intent rather than
+    restate the code. comment_ratio is the volume half of the design doc's
+    C-category signal; this is the quality half -- a file can carry a
+    healthy comment ratio and still be all what-comments. A what-comment is
+    one taorc-lint flags under WHAT_COMMENT_RULES. Needs the linter, so
+    it's None exactly when `findings` is (ast-grep absent, pathological
+    file)."""
+    if findings is None:
+        return None
+    comment_count = count_comments(code)
+    if not comment_count:
+        return None
+    what_comment_lines = {f["line"] for f in findings if f.get("id") in WHAT_COMMENT_RULES}
+    why_comments = max(0, comment_count - len(what_comment_lines))
+    return round(why_comments / comment_count, 3)
 
 
 def nesting_depth(code: str) -> tuple[int, float] | tuple[None, None]:
@@ -243,6 +275,7 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
         "lint_findings": len(findings) if findings is not None else None,
         "lint_findings_per_100_loc": findings_per_100_loc,
         "comment_to_code_ratio": comment_ratio(code),
+        "why_comment_share": why_comment_share(code, findings),
         "max_nesting_depth": max_depth,
         "mean_nesting_depth": mean_depth,
         "empty_word_identifier_count": empty_word_count(code),
