@@ -287,6 +287,45 @@ def cart_total(cart):
 
         self.assertNotIn("def line_total", rebuilt)
 
+    def test_helper_still_called_by_an_untouched_function_is_kept_not_deleted(self):
+        """A fragment inlines a helper into one function but a different,
+        untouched function still calls it. The helper sits inside the rewritten
+        region and the fragment never names it, yet deleting it would break the
+        surviving caller and inflate M3 for a deletion the model never made."""
+        starter = '''\
+"""Cart."""
+
+
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt})
+    return cart
+
+
+def line_total(line):
+    return line["qty"] * line["amt"]
+
+
+def cart_total(cart):
+    return sum(line_total(line) for line in cart)
+
+
+def receipt(cart):
+    return [line_total(line) for line in cart]
+'''
+        inlines_into_cart_total_only = '''\
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt})
+    return cart
+
+
+def cart_total(cart):
+    return sum(line["qty"] * line["amt"] for line in cart)
+'''
+        rebuilt = reconstruct_edited_file(starter, inlines_into_cart_total_only)
+
+        self.assertIn("def line_total", rebuilt)
+        self.assertIn("def receipt", rebuilt)
+
     def test_whole_file_rewrite_of_every_function_that_drops_the_docstring_keeps_the_deletion(self):
         """The completion rewrites the body of every starter function -- so no
         definition is echoed verbatim -- and omits the module docstring. It is

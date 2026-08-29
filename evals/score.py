@@ -404,16 +404,18 @@ def _rebuild_class_with_method_edits(
 def _definitions_removed_by_fragment(
     starter_defs_in_order: list[tuple[str, tuple[int, int]]],
     completion_spans: dict[str, tuple[int, int]],
-    names_referenced_by_completion: set[str],
+    names_still_referenced: set[str],
 ) -> set[str]:
     """Top-level names a fragment completion deleted rather than left alone.
 
     A fragment says nothing about definitions outside the region it rewrites,
     so one it simply omits is kept. But a definition that sits between two the
-    fragment does redefine, and that the rewritten code never names, was
-    removed on purpose -- re-inserting it would hide the deletion from M3
-    (#26). "Never names" is an AST check: a matching substring in a string
-    literal or a comment (`# inlined line_total`) does not count as a use."""
+    fragment does redefine, and that nothing surviving the splice still names,
+    was removed on purpose -- re-inserting it would hide the deletion from M3
+    (#26). "Nothing still names" is an AST check over both the completion and
+    every starter definition the fragment left untouched: a matching substring
+    in a string literal or a comment (`# inlined line_total`) does not count as
+    a use, but a call from an unchanged sibling function does."""
     redefined_indices = [
         index
         for index, (name, _) in enumerate(starter_defs_in_order)
@@ -427,7 +429,7 @@ def _definitions_removed_by_fragment(
     for index, (name, _span) in enumerate(starter_defs_in_order):
         if name in completion_spans or index not in rewritten_region:
             continue
-        if name not in names_referenced_by_completion:
+        if name not in names_still_referenced:
             removed.add(name)
     return removed
 
@@ -442,6 +444,28 @@ def _names_referenced(tree: ast.Module) -> set[str]:
             referenced.add(node.id)
         elif isinstance(node, ast.Attribute):
             referenced.add(node.attr)
+    return referenced
+
+
+def _names_referenced_by_kept_code(
+    tree: ast.Module, replaced_def_names: set[str]
+) -> set[str]:
+    """Identifiers read or written by the top-level statements a fragment splice
+    keeps byte-for-byte -- the prologue plus every definition the completion did
+    not redefine. A name used only by this surviving code is still live, so the
+    fragment omitting its definition is not a deletion (#26)."""
+    referenced: set[str] = set()
+    for node in tree.body:
+        is_definition = isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        )
+        if is_definition and node.name in replaced_def_names:
+            continue
+        for descendant in ast.walk(node):
+            if isinstance(descendant, ast.Name):
+                referenced.add(descendant.id)
+            elif isinstance(descendant, ast.Attribute):
+                referenced.add(descendant.attr)
     return referenced
 
 
@@ -504,8 +528,11 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
         return completion_code
 
     starter_defs_in_order = sorted(starter_spans.items(), key=lambda item: item[1][0])
+    names_still_referenced = _names_referenced(completion_tree) | (
+        _names_referenced_by_kept_code(starter_tree, set(completion_spans))
+    )
     removed_names = _definitions_removed_by_fragment(
-        starter_defs_in_order, completion_spans, _names_referenced(completion_tree)
+        starter_defs_in_order, completion_spans, names_still_referenced
     )
 
     # A completion def that names no top-level starter definition but exactly
