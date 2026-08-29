@@ -79,36 +79,19 @@ def load_empty_word_pattern() -> re.Pattern:
 EMPTY_WORD_PATTERN = load_empty_word_pattern()
 
 
-# A same-language block this much shorter than the overall longest block is
-# treated as an illustrative snippet, not the answer.
-_MIN_SAME_LANGUAGE_LENGTH_RATIO = 0.5
-
-
 def extract_code(completion_text: str, output_suffix: str = "") -> str:
     """A raw completion is often prose plus one or more fenced code blocks.
     Prefer the largest block whose fence language matches the scenario's
     output file; fall back to the largest block of any language; if the
     model returned bare code with no fence at all, score the whole
-    response.
-
-    The language match only wins when its largest block is within
-    `_MIN_SAME_LANGUAGE_LENGTH_RATIO` of the overall longest block, so a
-    short tagged snippet doesn't beat the real answer sitting in an
-    untagged fence."""
+    response."""
     blocks = CODE_FENCE_PATTERN.findall(completion_text)
     if not blocks:
         return completion_text
-    all_bodies = [body for _lang, body in blocks]
-    longest_body = max(all_bodies, key=len)
     wanted_langs = FENCE_LANGS_FOR_SUFFIX.get(output_suffix.lower(), set())
     same_language_blocks = [body for lang, body in blocks if lang.lower() in wanted_langs]
-    if not same_language_blocks:
-        return longest_body
-    longest_same_language = max(same_language_blocks, key=len)
-    is_close_to_longest = (
-        len(longest_same_language) >= _MIN_SAME_LANGUAGE_LENGTH_RATIO * len(longest_body)
-    )
-    return longest_same_language if is_close_to_longest else longest_body
+    candidates = same_language_blocks or [body for _lang, body in blocks]
+    return max(candidates, key=len)
 
 
 def count_loc(code: str) -> int:
