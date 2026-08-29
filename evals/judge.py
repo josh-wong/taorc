@@ -77,6 +77,26 @@ def judge_models_for(generation_model_slot: str) -> list[ModelSpec]:
     return other_models
 
 
+def ab_order_is_skill_first(
+    seed: int | None,
+    scenario_id: str,
+    generation_slot: str,
+    judge_slot: str,
+    judging_pass: int,
+) -> bool:
+    """Whether the skill completion is shown as version A for one judgment.
+    With --seed set, this is a deterministic function of the judgment's
+    identity, not a draw from one shared RNG stream: a re-run -- or a
+    resume over a half-written judgments/ dir, where the already-saved
+    judgments never draw -- reproduces the same A/B layout for every pair
+    regardless of which ones were done first. With no seed it's a fresh
+    coin flip per judgment."""
+    if seed is None:
+        return random.random() < 0.5
+    identity = f"{seed}|{scenario_id}|{generation_slot}|{judge_slot}|{judging_pass}"
+    return random.Random(identity).random() < 0.5
+
+
 def build_judge_prompt(task_title: str, version_a: str, version_b: str) -> str:
     rubric_lines = "\n".join(
         f'    "{letter}": <1-5 score for {name}>' for letter, name in RUBRIC_CATEGORIES.items()
@@ -143,12 +163,16 @@ def parse_judge_response(text: str) -> dict | None:
 
 
 def judge_pair(
-    scenario_title: str, baseline_code: str, skill_code: str, judge_spec: ModelSpec
+    scenario_title: str,
+    baseline_code: str,
+    skill_code: str,
+    judge_spec: ModelSpec,
+    skill_is_a: bool,
 ) -> dict:
-    """Randomizes which condition is labeled A vs. B so the judge can't infer
+    """Shows the skill completion as version A or B per skill_is_a (chosen
+    by the caller, see ab_order_is_skill_first) so the judge can't infer
     the condition from position, then translates the raw A/B answer back to
     baseline/skill before returning it."""
-    skill_is_a = random.random() < 0.5
     version_a = skill_code if skill_is_a else baseline_code
     version_b = baseline_code if skill_is_a else skill_code
 
@@ -247,6 +271,7 @@ def judge_pair_repeatedly(
     skill_code: str,
     judgments_dir: Path,
     force: bool,
+    seed: int | None,
 ) -> list[dict]:
     """Runs every non-generating matrix model over one baseline/skill pair
     PASSES_PER_JUDGE times, writes each raw judgment to its own file, and
@@ -270,8 +295,13 @@ def judge_pair_repeatedly(
                 judgments.append(saved)
                 continue
 
+            skill_is_a = ab_order_is_skill_first(
+                seed, scenario_id, generation_slot, judge_spec.slot, judging_pass
+            )
             try:
-                judgment = judge_pair(scenario_title, baseline_code, skill_code, judge_spec)
+                judgment = judge_pair(
+                    scenario_title, baseline_code, skill_code, judge_spec, skill_is_a
+                )
             except ModelCallError as error:
                 print(f"  SKIPPED {label}: {error}", file=sys.stderr)
                 continue
@@ -282,7 +312,7 @@ def judge_pair_repeatedly(
     return judgments
 
 
-def run_judging(run_dir: Path, force: bool) -> dict:
+def run_judging(run_dir: Path, force: bool, seed: int | None) -> dict:
     scenarios_by_id = {s.id: s for s in load_all_scenarios()}
     judgments_dir = run_dir / "judgments"
     judgments_dir.mkdir(parents=True, exist_ok=True)
@@ -316,6 +346,7 @@ def run_judging(run_dir: Path, force: bool) -> dict:
                 skill_code,
                 judgments_dir,
                 force,
+                seed,
             )
             for judgment in judgments:
                 verdict = judgment["preferred_condition"] or "no_verdict"
@@ -337,7 +368,9 @@ def main() -> int:
         "--seed",
         type=int,
         default=None,
-        help="seed for A/B order randomization (for a reproducible re-run)",
+        help="seed for A/B order randomization; makes a from-scratch run and "
+        "a resume over the same run's saved judgments produce the same A/B "
+        "layout for every pair",
     )
     parser.add_argument(
         "--force",
@@ -347,14 +380,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if args.seed is not None:
-        random.seed(args.seed)
-
     run_dir = Path(args.run)
     if not (run_dir / "raw").is_dir():
         parser.error(f"{run_dir} has no raw/ directory -- run run_bench.py first")
 
-    outcome = run_judging(run_dir, args.force)
+    outcome = run_judging(run_dir, args.force, args.seed)
     counts = outcome["preference_counts"]
     rubric_means = outcome["rubric_means"]
 

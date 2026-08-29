@@ -22,7 +22,8 @@ cell with a non-empty completion file is kept, not regenerated, so an
 interrupted paid run resumes by just being re-invoked (pass --force to
 regenerate). A cell whose generation failed leaves a <condition>.error.json
 behind -- a durable record that score.py surfaces -- and is retried on the
-next run.
+next run; a --force regen that fails drops the previous completion first,
+so a cell is never both scored and reported as failed.
 """
 
 from __future__ import annotations
@@ -84,6 +85,13 @@ def run_one(
     try:
         completion = generate(spec, system_prompt, user_prompt, DEFAULT_SAMPLER)
     except ModelCallError as error:
+        # A forced regen that fails must not leave the old completion on
+        # disk: the next non-force run would score that stale file while
+        # score.py also lists this cell as a generation failure, so the
+        # same cell reads as both scored and failed. Drop it and let the
+        # error.json be the whole record until a retry succeeds.
+        completion_path.unlink(missing_ok=True)
+        metadata_path.unlink(missing_ok=True)
         error_path.write_text(
             json.dumps(
                 {
