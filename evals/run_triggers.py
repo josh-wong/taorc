@@ -23,7 +23,9 @@ that failed, and ``triggers_summary.json`` with the activation rate on the
 ``meets_m4`` is ``true`` only when the whole suite classified: a run with
 any failed cell, or one narrowed by ``--limit``, reports ``meets_m4: false``
 whatever the partial rates say and exits non-zero, so a shrunken sample
-can't be mistaken for a passing verdict.
+can't be mistaken for a passing verdict. A ``--limit`` run writes its summary
+to ``triggers_summary.partial.json`` so it never overwrites a full pass's
+``triggers_summary.json`` in the same ``--out``.
 
 Like run_bench.py, this resumes: a prompt already classified on disk is
 kept, not re-billed, so an interrupted pass finishes by being re-invoked
@@ -41,6 +43,7 @@ import json
 import os
 import re
 import sys
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -67,7 +70,7 @@ CLASSIFIER_SYSTEM_PROMPT = (
     'JSON object and nothing else: {"activate": true} or {"activate": false}.'
 )
 
-_JSON_OBJECT = re.compile(r"\{[^{}]*\}", re.DOTALL)
+_OPENING_BRACE = re.compile(r"\{")
 
 # Some model slots answer the boolean field with a stringified verdict
 # ({"activate": "false"}) or a word ({"activate": "no"}). bool() on any
@@ -98,19 +101,31 @@ def parse_activation(response_text: str) -> bool:
     response with no usable ``activate`` verdict rather than guessing -- an
     unparseable verdict is a failed cell, recorded and retried, not a silent
     false that would skew the false-fire rate."""
-    for candidate in _JSON_OBJECT.findall(response_text):
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError:
+    for verdict_object in _json_objects(response_text):
+        if not isinstance(verdict_object, dict) or "activate" not in verdict_object:
             continue
-        if not isinstance(parsed, dict) or "activate" not in parsed:
-            continue
-        verdict = _as_activation_bool(parsed["activate"])
+        verdict = _as_activation_bool(verdict_object["activate"])
         if verdict is not None:
             return verdict
     raise ModelCallError(
         f"classifier response has no usable 'activate' verdict: {response_text!r}"
     )
+
+
+def _json_objects(text: str) -> Iterator[object]:
+    """Every JSON value that parses cleanly starting at a ``{`` in ``text``,
+    left to right. ``raw_decode`` consumes one whole value and ignores the
+    trailing text, so a verdict wrapped in prose (``Sure: {"activate": true}``)
+    or carrying a nested object (``{"activate": true, "why": {...}}``) is still
+    read whole -- a regex that stopped at the first ``}`` would hand back only
+    the inner object and miss the verdict entirely."""
+    decoder = json.JSONDecoder()
+    for brace in _OPENING_BRACE.finditer(text):
+        try:
+            parsed, _ = decoder.raw_decode(text, brace.start())
+        except json.JSONDecodeError:
+            continue
+        yield parsed
 
 
 def _as_activation_bool(value: object) -> bool | None:
@@ -131,19 +146,19 @@ def classify_one(
     force: bool,
 ) -> dict | None:
     """Classifies one prompt and writes ``raw/<id>.json``, or returns the
-    already-saved result on a resume. Returns None when the call failed (an
-    ``raw/<id>.error.json`` is left behind, mirroring run_bench.py)."""
+    already-saved classification on a resume. Returns None when the call failed
+    (an ``raw/<id>.error.json`` is left behind, mirroring run_bench.py)."""
     spec = next((m for m in MODEL_MATRIX if m.slot == model_slot), None)
     if spec is None:
         raise ValueError(f"no model in MODEL_MATRIX with slot {model_slot!r}")
 
     raw_dir = triggers_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
-    result_path = raw_dir / f"{prompt.id}.json"
+    classification_path = raw_dir / f"{prompt.id}.json"
     error_path = raw_dir / f"{prompt.id}.error.json"
 
-    if result_path.exists() and not force:
-        saved = _load_saved_result(result_path)
+    if classification_path.exists() and not force:
+        saved = _load_saved_classification(classification_path)
         if saved is not None and _resumable(saved, prompt, skill, model_slot):
             print(f"  KEPT {prompt.id} -- already classified (pass --force to redo)")
             return saved
@@ -159,7 +174,7 @@ def classify_one(
         response_text = generate(spec, system_prompt, user_prompt, CLASSIFIER_SAMPLER)
         activated = parse_activation(response_text)
     except ModelCallError as error:
-        result_path.unlink(missing_ok=True)
+        classification_path.unlink(missing_ok=True)
         error_path.write_text(
             json.dumps(
                 {
@@ -175,7 +190,7 @@ def classify_one(
         print(f"  FAILED {prompt.id}: {error}", file=sys.stderr)
         return None
 
-    result = {
+    classification = {
         "prompt_id": prompt.id,
         "label": prompt.label,
         "category": prompt.category,
@@ -190,15 +205,15 @@ def classify_one(
         "raw_response": response_text,
         "classified_at": datetime.now(timezone.utc).isoformat(),
     }
-    result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    classification_path.write_text(json.dumps(classification, indent=2), encoding="utf-8")
     error_path.unlink(missing_ok=True)
     verdict = "activate" if activated else "skip"
-    mark = "ok" if result["correct"] else "MISS"
+    mark = "ok" if classification["correct"] else "MISS"
     print(f"  {prompt.id} [{prompt.label}] -> {verdict} ({mark})")
-    return result
+    return classification
 
 
-def _load_saved_result(path: Path) -> dict | None:
+def _load_saved_classification(path: Path) -> dict | None:
     try:
         saved = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -229,27 +244,27 @@ def _resumable(
 
 
 def summarize(
-    results: list[dict],
+    classifications: list[dict],
     skill: SkillIdentity,
     model_slot: str,
     *,
     suite_fully_scored: bool,
 ) -> dict:
-    positives = [r for r in results if r["should_activate"]]
-    negatives = [r for r in results if not r["should_activate"]]
-    activated_positives = [r for r in positives if r["activated"]]
-    activated_negatives = [r for r in negatives if r["activated"]]
+    positives = [c for c in classifications if c["should_activate"]]
+    negatives = [c for c in classifications if not c["should_activate"]]
+    activated_positives = [c for c in positives if c["activated"]]
+    activated_negatives = [c for c in negatives if c["activated"]]
 
     activation_rate = _pct(len(activated_positives), len(positives))
     false_fire_rate = _pct(len(activated_negatives), len(negatives))
 
     false_fire_by_category: dict[str, dict] = {}
-    for result in negatives:
+    for negative in negatives:
         bucket = false_fire_by_category.setdefault(
-            result["category"], {"total": 0, "false_fires": 0}
+            negative["category"], {"total": 0, "false_fires": 0}
         )
         bucket["total"] += 1
-        bucket["false_fires"] += 1 if result["activated"] else 0
+        bucket["false_fires"] += 1 if negative["activated"] else 0
 
     meets_activation = activation_rate is not None and activation_rate >= 90.0
     meets_false_fire = false_fire_rate is not None and false_fire_rate <= 10.0
@@ -280,10 +295,10 @@ def summarize(
         "meets_m4": bool(meets_m4),
         "false_fire_by_negative_category": false_fire_by_category,
         "positives_not_activated": sorted(
-            r["prompt_id"] for r in positives if not r["activated"]
+            c["prompt_id"] for c in positives if not c["activated"]
         ),
         "negatives_activated": sorted(
-            r["prompt_id"] for r in negatives if r["activated"]
+            c["prompt_id"] for c in negatives if c["activated"]
         ),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -357,25 +372,35 @@ def main() -> int:
     _require_api_key(args.model)
 
     triggers_dir = Path(args.out) / "triggers"
-    results: list[dict] = []
+    classifications: list[dict] = []
     failed_prompt_ids: list[str] = []
     for prompt in prompts:
-        result = classify_one(prompt, skill, args.model, triggers_dir, args.force)
-        if result is None:
+        classification = classify_one(prompt, skill, args.model, triggers_dir, args.force)
+        if classification is None:
             failed_prompt_ids.append(prompt.id)
         else:
-            results.append(result)
+            classifications.append(classification)
 
     ran_whole_suite = args.limit is None
     suite_fully_scored = ran_whole_suite and not failed_prompt_ids
     summary = summarize(
-        results, skill, args.model, suite_fully_scored=suite_fully_scored
+        classifications, skill, args.model, suite_fully_scored=suite_fully_scored
     )
     summary["classification_failures"] = len(failed_prompt_ids)
     summary["failed_prompt_ids"] = sorted(failed_prompt_ids)
     summary["limited_to_first_n"] = args.limit
 
-    summary_path = triggers_dir / "triggers_summary.json"
+    # A --limit run scores only the first N prompts, so its meets_m4 is false
+    # and its rates cover a fraction of the suite. Writing that to
+    # triggers_summary.json would clobber a real full-pass verdict sitting in
+    # the same --out directory (RESULTS.md publication reads that file), so a
+    # smoke test lands in its own file instead.
+    summary_name = (
+        "triggers_summary.partial.json"
+        if args.limit is not None
+        else "triggers_summary.json"
+    )
+    summary_path = triggers_dir / summary_name
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"\nwrote {summary_path}")
     print(

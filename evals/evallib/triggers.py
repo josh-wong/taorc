@@ -90,13 +90,13 @@ def _fail(problems: list[str]) -> None:
         )
 
 
-def _parse_prompts(raw: object) -> list[TriggerPrompt]:
-    if not isinstance(raw, dict) or not isinstance(raw.get("prompts"), list):
+def _parse_prompts(suite_json: object) -> list[TriggerPrompt]:
+    if not isinstance(suite_json, dict) or not isinstance(suite_json.get("prompts"), list):
         raise TriggerSuiteError("evals/triggers.json: top level needs a 'prompts' array")
 
     prompts: list[TriggerPrompt] = []
     problems: list[str] = []
-    for index, entry in enumerate(raw["prompts"]):
+    for index, entry in enumerate(suite_json["prompts"]):
         where = f"prompt #{index + 1}"
         if not isinstance(entry, dict):
             problems.append(f"{where}: not an object")
@@ -184,10 +184,10 @@ def load_suite(path: Path = TRIGGERS_PATH) -> list[TriggerPrompt]:
     if not path.exists():
         raise TriggerSuiteError(f"{path} does not exist")
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        suite_json = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise TriggerSuiteError(f"{path}: not valid JSON ({error})") from error
-    prompts = _parse_prompts(raw)
+    prompts = _parse_prompts(suite_json)
     _check_distribution(prompts)
     return prompts
 
