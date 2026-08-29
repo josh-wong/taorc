@@ -34,6 +34,7 @@ from evallib.models import (  # noqa: E402
     generate,
 )
 from evallib.scenarios import load_all_scenarios  # noqa: E402
+from run_bench import output_extension  # noqa: E402
 from score import extract_code  # noqa: E402
 
 JUDGE_SYSTEM_PROMPT = (
@@ -88,13 +89,20 @@ Return exactly this JSON shape:
 
 
 def parse_judge_response(text: str) -> dict | None:
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if not match:
-        return None
-    try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
+    """A greedy `\\{.*\\}` regex would span from a stray brace in the judge's
+    own reasoning prose to the response's final `}`, producing invalid JSON
+    and silently losing a real verdict. Instead, try decoding a JSON object
+    starting at each `{` in turn and keep the first one that actually has
+    the "preference" key the answer is supposed to carry."""
+    decoder = json.JSONDecoder()
+    for opening_brace in re.finditer(r"\{", text):
+        try:
+            parsed, _ = decoder.raw_decode(text, opening_brace.start())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and "preference" in parsed:
+            return parsed
+    return None
 
 
 def judge_pair(
@@ -138,8 +146,9 @@ def run_judging(run_dir: Path) -> dict:
         if scenario is None:
             continue
         for model_dir in sorted(scenario_dir.iterdir()):
-            baseline_path = model_dir / f"baseline{Path(scenario.output_file).suffix}"
-            skill_path = model_dir / f"skill{Path(scenario.output_file).suffix}"
+            completion_ext = output_extension(scenario)
+            baseline_path = model_dir / f"baseline{completion_ext}"
+            skill_path = model_dir / f"skill{completion_ext}"
             if not (baseline_path.exists() and skill_path.exists()):
                 continue
 

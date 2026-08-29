@@ -144,7 +144,13 @@ def call_anthropic(spec: ModelSpec, system: str, user: str, sampler: SamplerSett
             "top_p": sampler.top_p,
         },
     )
-    return "".join(block.get("text", "") for block in response.get("content", []))
+    text = "".join(block.get("text", "") for block in response.get("content", []))
+    if not text:
+        raise ModelCallError(
+            f"{spec.slot}: empty content from api.anthropic.com/v1/messages "
+            f"(likely content-filtered or a stop_reason with no text): {response!r}"
+        )
+    return text
 
 
 def call_openai_chat(spec: ModelSpec, system: str, user: str, sampler: SamplerSettings) -> str:
