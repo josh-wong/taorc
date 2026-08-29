@@ -470,7 +470,7 @@ def _limited_sample(suite: list[TriggerPrompt], limit: int) -> list[TriggerPromp
     positives = [p for p in suite if p.should_activate]
     negatives = [p for p in suite if not p.should_activate]
     interleaved: list[TriggerPrompt] = []
-    for positive, negative in zip(positives, negatives):
+    for positive, negative in zip(positives, negatives, strict=False):
         interleaved.extend((positive, negative))
     longer_tail = positives[len(negatives):] or negatives[len(positives):]
     interleaved.extend(longer_tail)
