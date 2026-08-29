@@ -106,8 +106,11 @@ one `raw/<id>.json` per classified prompt (verdict plus the raw response),
 `raw/<id>.error.json` for a call that failed, and `triggers_summary.json`
 with the headline numbers. Like `run_bench.py`, it resumes — a prompt
 already on disk is kept, not re-billed — and takes `--force` to
-re-classify. `--model` picks the classifier slot (default `claude`, the
-skill's primary harness).
+re-classify. A kept cell must match the current skill `description` and
+`--model`; when either changed since it was saved the cell is re-classified
+automatically, so a rerun after a `description` edit needs no `--force`.
+`--model` picks the classifier slot (default `claude`, the skill's primary
+harness).
 
 `triggers_summary.json` reports the activation rate on the 60 positives and
 the false-fire rate on the 40 negatives against M4 (≥90% activation, ≤10%

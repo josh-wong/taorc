@@ -69,6 +69,20 @@ CLASSIFIER_SYSTEM_PROMPT = (
 
 _JSON_OBJECT = re.compile(r"\{[^{}]*\}", re.DOTALL)
 
+# Some model slots answer the boolean field with a stringified verdict
+# ({"activate": "false"}) or a word ({"activate": "no"}). bool() on any
+# non-empty string is True, so a bare bool() cast would score those as
+# activations. Map the known spellings explicitly; anything else is an
+# unparseable verdict, not a guess.
+_ACTIVATION_WORDS = {
+    "true": True,
+    "yes": True,
+    "activate": True,
+    "false": False,
+    "no": False,
+    "skip": False,
+}
+
 
 def build_classifier_prompt(skill: SkillIdentity, request: str) -> str:
     return (
@@ -81,19 +95,32 @@ def build_classifier_prompt(skill: SkillIdentity, request: str) -> str:
 
 def parse_activation(response_text: str) -> bool:
     """The classifier's verdict as a bool. Raises ModelCallError on a
-    response with no parseable ``activate`` field rather than guessing --
-    an unparseable verdict is a failed cell, recorded and retried, not a
-    silent false that would skew the false-fire rate."""
+    response with no usable ``activate`` verdict rather than guessing -- an
+    unparseable verdict is a failed cell, recorded and retried, not a silent
+    false that would skew the false-fire rate."""
     for candidate in _JSON_OBJECT.findall(response_text):
         try:
             parsed = json.loads(candidate)
         except json.JSONDecodeError:
             continue
-        if isinstance(parsed, dict) and "activate" in parsed:
-            return bool(parsed["activate"])
+        if not isinstance(parsed, dict) or "activate" not in parsed:
+            continue
+        verdict = _as_activation_bool(parsed["activate"])
+        if verdict is not None:
+            return verdict
     raise ModelCallError(
-        f"classifier response has no parseable 'activate' field: {response_text!r}"
+        f"classifier response has no usable 'activate' verdict: {response_text!r}"
     )
+
+
+def _as_activation_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):  # {"activate": 1} / {"activate": 0}
+        return value != 0
+    if isinstance(value, str):
+        return _ACTIVATION_WORDS.get(value.strip().lower())
+    return None
 
 
 def classify_one(
@@ -117,9 +144,14 @@ def classify_one(
 
     if result_path.exists() and not force:
         saved = _load_saved_result(result_path)
-        if saved is not None:
+        if saved is not None and _resumable(saved, skill, model_slot):
             print(f"  KEPT {prompt.id} -- already classified (pass --force to redo)")
             return saved
+        if saved is not None:
+            print(
+                f"  STALE {prompt.id} -- re-classifying (skill description or "
+                "--model changed since it was saved)"
+            )
 
     system_prompt = CLASSIFIER_SYSTEM_PROMPT
     user_prompt = build_classifier_prompt(skill, prompt.prompt)
@@ -153,6 +185,8 @@ def classify_one(
         "correct": activated == prompt.should_activate,
         "model_slot": model_slot,
         "model_id": spec.model_id,
+        "skill_name": skill.name,
+        "skill_description": skill.description,
         "raw_response": response_text,
         "classified_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -170,6 +204,19 @@ def _load_saved_result(path: Path) -> dict | None:
     except (OSError, json.JSONDecodeError):
         return None
     return saved if isinstance(saved, dict) and "activated" in saved else None
+
+
+def _resumable(saved: dict, skill: SkillIdentity, model_slot: str) -> bool:
+    """A saved cell can be kept only if it was classified against the same
+    skill description and the same model. evals/README.md says to rerun
+    "whenever SKILL.md frontmatter changes" -- resuming across that edit
+    would keep verdicts from the old description while the summary header
+    reports the new one. A cell saved before this field existed has no
+    recorded description and is re-classified."""
+    return (
+        saved.get("skill_description") == skill.description
+        and saved.get("model_slot") == model_slot
+    )
 
 
 def summarize(
@@ -280,6 +327,8 @@ def main() -> int:
         "interrupted pass resumes without re-billing)",
     )
     args = parser.parse_args()
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be a positive integer")
 
     suite = load_suite()
     skill = skill_identity()
