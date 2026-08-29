@@ -113,6 +113,10 @@ skill's primary harness).
 the false-fire rate on the 40 negatives against M4 (≥90% activation, ≤10%
 false fire), plus `positives_not_activated` and `negatives_activated` so a
 miscalibrated `description` points straight at the prompts that moved.
+`meets_m4` is `true` only when every prompt classified — a run with a failed
+cell or a `--limit` reports `false` regardless of the partial rates and
+exits non-zero. Failed cells are listed in `failed_prompt_ids`; rerun with
+the same `--out` to retry just those.
 `evallib/triggers.py` refuses to load a suite that has drifted off the
 60/40/10-5-25 shape — `scripts/validate.py` runs that same check in CI.
 

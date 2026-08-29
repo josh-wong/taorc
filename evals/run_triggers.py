@@ -20,6 +20,11 @@ that failed, and ``triggers_summary.json`` with the activation rate on the
 60 positives and the false-fire rate on the 40 negatives, scored against M4
 (≥90% activation, ≤10% false fire).
 
+``meets_m4`` is ``true`` only when the whole suite classified: a run with
+any failed cell, or one narrowed by ``--limit``, reports ``meets_m4: false``
+whatever the partial rates say and exits non-zero, so a shrunken sample
+can't be mistaken for a passing verdict.
+
 Like run_bench.py, this resumes: a prompt already classified on disk is
 kept, not re-billed, so an interrupted pass finishes by being re-invoked
 with the same ``--out`` (pass ``--force`` to re-classify). It needs one API
@@ -43,10 +48,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from evallib.models import MODEL_MATRIX, ModelCallError, SamplerSettings, generate
 from evallib.triggers import SkillIdentity, TriggerPrompt, load_suite, skill_identity
 
-# A yes/no classification wants no sampling variance and almost no output
-# room: the model is asked for one short JSON object, and a stable verdict
-# across reruns is the whole point of iterating a description against it.
-CLASSIFIER_SAMPLER = SamplerSettings(temperature=0.0, top_p=1.0, max_tokens=200)
+# A yes/no classification wants no sampling variance; temperature 0 gives a
+# stable verdict across the reruns that iterating a description depends on.
+# The token cap is deliberately generous, not tight: the verdict is one
+# short JSON object, but a model that emits a sentence of reasoning before
+# it would trip models._reject_if_truncated at a small cap, and a truncated
+# call is a hard failure that re-fails identically on every rerun -- so the
+# prompt would be permanently absent from the rates that gate M4. 1000
+# tokens clears any reasonable preamble while still bounding a runaway reply.
+CLASSIFIER_SAMPLER = SamplerSettings(temperature=0.0, top_p=1.0, max_tokens=1000)
 
 CLASSIFIER_SYSTEM_PROMPT = (
     "You route user requests to agent skills. You are given one skill's "
@@ -162,7 +172,13 @@ def _load_saved_result(path: Path) -> dict | None:
     return saved if isinstance(saved, dict) and "activated" in saved else None
 
 
-def summarize(results: list[dict], skill: SkillIdentity, model_slot: str) -> dict:
+def summarize(
+    results: list[dict],
+    skill: SkillIdentity,
+    model_slot: str,
+    *,
+    suite_fully_scored: bool,
+) -> dict:
     positives = [r for r in results if r["should_activate"]]
     negatives = [r for r in results if not r["should_activate"]]
     activated_positives = [r for r in positives if r["activated"]]
@@ -181,8 +197,15 @@ def summarize(results: list[dict], skill: SkillIdentity, model_slot: str) -> dic
 
     meets_activation = activation_rate is not None and activation_rate >= 90.0
     meets_false_fire = false_fire_rate is not None and false_fire_rate <= 10.0
+    # A rate computed over a subset of the suite -- because cells failed to
+    # classify, or --limit ran only the first N -- is not an M4 verdict. The
+    # missing prompts could all be misses; reporting "meets M4" off what
+    # happened to succeed is how a tuning decision gets made against an
+    # instrument that measured half the suite.
+    meets_m4 = suite_fully_scored and meets_activation and meets_false_fire
 
     return {
+        "suite_fully_scored": suite_fully_scored,
         "classifier_model_slot": model_slot,
         "skill_name": skill.name,
         "skill_description": skill.description,
@@ -198,7 +221,7 @@ def summarize(results: list[dict], skill: SkillIdentity, model_slot: str) -> dic
         "activation_rate_pct": activation_rate,
         "false_fire_rate_pct": false_fire_rate,
         "m4_targets": {"activation_rate_pct": ">=90", "false_fire_rate_pct": "<=10"},
-        "meets_m4": bool(meets_activation and meets_false_fire),
+        "meets_m4": bool(meets_m4),
         "false_fire_by_negative_category": false_fire_by_category,
         "positives_not_activated": sorted(
             r["prompt_id"] for r in positives if not r["activated"]
@@ -277,14 +300,22 @@ def main() -> int:
 
     triggers_dir = Path(args.out) / "triggers"
     results: list[dict] = []
+    failed_prompt_ids: list[str] = []
     for prompt in prompts:
         result = classify_one(prompt, skill, args.model, triggers_dir, args.force)
-        if result is not None:
+        if result is None:
+            failed_prompt_ids.append(prompt.id)
+        else:
             results.append(result)
 
-    summary = summarize(results, skill, args.model)
-    failed = len(prompts) - len(results)
-    summary["classification_failures"] = failed
+    ran_whole_suite = args.limit is None
+    suite_fully_scored = ran_whole_suite and not failed_prompt_ids
+    summary = summarize(
+        results, skill, args.model, suite_fully_scored=suite_fully_scored
+    )
+    summary["classification_failures"] = len(failed_prompt_ids)
+    summary["failed_prompt_ids"] = sorted(failed_prompt_ids)
+    summary["limited_to_first_n"] = args.limit
 
     summary_path = triggers_dir / "triggers_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
@@ -298,13 +329,22 @@ def main() -> int:
         "(M4 target <= 10%)"
     )
     print(f"  meets M4: {'yes' if summary['meets_m4'] else 'no'}")
-    if failed:
+    if not ran_whole_suite:
         print(
-            f"  WARNING: {failed} prompt(s) failed classification and are absent from "
-            "the rates above -- see raw/*.error.json",
+            f"  NOTE: --limit {args.limit} scored only the first {len(prompts)} "
+            "prompts; this is a runner smoke test, not an M4 verdict."
+        )
+    if failed_prompt_ids:
+        print(
+            f"  WARNING: {len(failed_prompt_ids)} prompt(s) failed classification and "
+            f"are absent from the rates above: {', '.join(sorted(failed_prompt_ids))} "
+            "-- see raw/*.error.json, then rerun with the same --out to retry them.",
             file=sys.stderr,
         )
-    return 0
+    # A partial pass is a non-zero exit, not a green run with a stderr line:
+    # meets_m4 is already false, and an on-demand or CI caller should see the
+    # failure rather than trust a summary written over a shrunken sample.
+    return 1 if failed_prompt_ids else 0
 
 
 def _fmt_pct(value: float | None) -> str:
