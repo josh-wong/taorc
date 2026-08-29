@@ -110,13 +110,21 @@ def _post_json(url: str, headers: dict[str, str], payload: dict) -> dict:
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECS) as response:
-            return json.loads(response.read().decode("utf-8"))
+            raw_body = response.read()
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
         raise ModelCallError(f"HTTP {error.code} from {url}: {detail}") from error
     except urllib.error.URLError as error:
         raise ModelCallError(f"could not reach {url}: {error.reason}") from error
 
+    # A 200 status doesn't guarantee a well-formed body -- a proxy in front
+    # of the real provider can return an HTML error page or a truncated
+    # response while still setting a success status.
+    try:
+        return json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        detail = raw_body[:200].decode("utf-8", errors="replace")
+        raise ModelCallError(f"unparseable response body from {url}: {detail!r}") from error
 
 def call_anthropic(spec: ModelSpec, system: str, user: str, sampler: SamplerSettings) -> str:
     api_key = _require_api_key(spec)
@@ -160,12 +168,18 @@ def call_openai_chat(spec: ModelSpec, system: str, user: str, sampler: SamplerSe
         },
     )
     try:
-        return response["choices"][0]["message"]["content"]
+        content = response["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as error:
         raise ModelCallError(
             f"{spec.slot}: unexpected response shape from {base_url}/chat/completions "
             f"(no completion choices -- may be content-filtered): {response!r}"
         ) from error
+    if content is None:
+        raise ModelCallError(
+            f"{spec.slot}: null message content from {base_url}/chat/completions "
+            f"(likely content-filtered): {response!r}"
+        )
+    return content
 
 
 def call_ollama(model_id: str, system: str, user: str, sampler: SamplerSettings) -> str:

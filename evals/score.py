@@ -164,6 +164,9 @@ def empty_word_count(code: str) -> int:
 
 
 def run_lint(code: str, suffix: str) -> list[dict] | None:
+    """Returns None (not scored) rather than raising on any lint-subprocess
+    failure -- one pathological completion should drop that one score, not
+    crash the whole run and lose every score already computed."""
     if not LINT_SCRIPT.exists():
         return None
     scratch = EVALS_ROOT / f"_score_scratch{suffix}"
@@ -175,11 +178,16 @@ def run_lint(code: str, suffix: str) -> list[dict] | None:
             text=True,
             timeout=60,
         )
+    except subprocess.TimeoutExpired:
+        return None
     finally:
         scratch.unlink(missing_ok=True)
     if not completed.stdout.strip():
         return None
-    return json.loads(completed.stdout)
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return None
 
 
 def diff_line_count(before: str, after: str) -> int:
@@ -213,10 +221,16 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
         "empty_word_identifier_count": empty_word_count(code),
     }
 
-    if scenario.measure_diff_size:
+    if scenario.measure_diff_size and scenario.starter_files:
         starter_path = next(iter(scenario.starter_files))
         before = scenario.starter_files[starter_path]
         result["diff_lines_vs_starter"] = diff_line_count(before, code)
+    elif scenario.measure_diff_size:
+        print(
+            f"  WARNING {scenario.id}: measure_diff_size is set but starter_files is "
+            "empty -- skipping diff_lines_vs_starter for this completion",
+            file=sys.stderr,
+        )
 
     return result
 
