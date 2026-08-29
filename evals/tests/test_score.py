@@ -157,6 +157,47 @@ def cart_total(cart):
 
         self.assertIn("def cart_total", rebuilt)
 
+    def test_single_definition_fragment_that_adds_its_own_import_is_still_spliced(self):
+        """Scenario 09 variant: the completion redefines the one function AND
+        carries a prologue line of its own (a new import), without echoing the
+        starter's imports. It is a fragment, not a rewrite -- diffing it raw
+        would count every un-echoed starter import as a deletion (#26)."""
+        starter = (
+            "import json\nfrom pathlib import Path\n\n\n"
+            "def load_config(path):\n    return json.loads(Path(path).read_text())\n"
+        )
+        fragment_adding_an_import = (
+            "import logging\n\n\n"
+            "def load_config(path):\n"
+            "    try:\n"
+            "        return json.loads(Path(path).read_text())\n"
+            "    except FileNotFoundError:\n"
+            "        logging.warning('missing config')\n"
+            "        return {}\n"
+        )
+        rebuilt = reconstruct_edited_file(starter, fragment_adding_an_import)
+
+        self.assertIn("import json", rebuilt)
+        self.assertIn("from pathlib import Path", rebuilt)
+        self.assertLessEqual(diff_line_count(starter, rebuilt), 6)
+
+    def test_full_file_rewrite_that_drops_the_module_docstring_keeps_the_deletion(self):
+        """A whole-file completion redefines every name and echoes the two
+        functions verbatim but omits the module docstring. That deletion is
+        the model's, so it must reach M3 rather than be spliced back."""
+        rewrite_without_docstring = '''\
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt})
+    return cart
+
+
+def cart_total(cart):
+    return sum(line["qty"] * line["amt"] for line in cart)
+'''
+        rebuilt = reconstruct_edited_file(CART_STARTER, rewrite_without_docstring)
+
+        self.assertNotIn("Shopping cart", rebuilt)
+
 
 if __name__ == "__main__":
     unittest.main()

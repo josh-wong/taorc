@@ -302,15 +302,47 @@ def _top_level_definition_spans(tree: ast.Module) -> dict[str, tuple[int, int]]:
     return spans
 
 
-def _has_statements_beyond_definitions(tree: ast.Module) -> bool:
-    """True if the module carries a prologue -- a docstring, imports, or
-    module-level assignments -- alongside its top-level functions and classes.
-    A full-file completion reproduces that prologue; a bare function or class
-    fragment drops it."""
-    return any(
-        not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-        for node in tree.body
-    )
+def _prologue_lines(tree: ast.Module, source_lines: list[str]) -> set[str]:
+    """Stripped, non-blank source lines of every top-level statement that is
+    not a function or class -- the module docstring, imports, and module-level
+    assignments. A full-file completion reproduces these lines; a fragment that
+    rewrites one function drops them."""
+    prologue: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for raw_line in source_lines[node.lineno - 1 : node.end_lineno]:
+            if raw_line.strip():
+                prologue.add(raw_line.strip())
+    return prologue
+
+
+def _completion_echoes_an_unchanged_definition(
+    starter_spans: dict[str, tuple[int, int]],
+    completion_spans: dict[str, tuple[int, int]],
+    starter_lines: list[str],
+    completion_lines: list[str],
+) -> bool:
+    """True if the completion reproduces at least one of the starter's
+    definitions verbatim. A fragment includes only what it changes, so echoing
+    an untouched definition is the signature of a whole-file rewrite -- the
+    reading that keeps a full-file completion's own deletions visible to M3."""
+    for name, starter_span in starter_spans.items():
+        completion_span = completion_spans.get(name)
+        if completion_span is None:
+            continue
+        starter_body = _lines_in_span(starter_lines, starter_span)
+        completion_body = _lines_in_span(completion_lines, completion_span)
+        if [line.strip() for line in starter_body] == [
+            line.strip() for line in completion_body
+        ]:
+            return True
+    return False
+
+
+def _lines_in_span(source_lines: list[str], span: tuple[int, int]) -> list[str]:
+    first_line, last_line = span
+    return source_lines[first_line - 1 : last_line]
 
 
 def _definitions_removed_by_fragment(
@@ -361,24 +393,30 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     starter_spans = _top_level_definition_spans(starter_tree)
     completion_spans = _top_level_definition_spans(completion_tree)
 
-    # A bare fragment redefines every name in a small starter too (scenarios
-    # 02 and 09 define just one), so name coverage alone misreads it as a
-    # rewrite (#26). A real rewrite also carries the starter's prologue.
-    completion_redefines_every_name = starter_spans.keys() <= completion_spans.keys()
-    starter_has_prologue = _has_statements_beyond_definitions(starter_tree)
-    completion_has_prologue = _has_statements_beyond_definitions(completion_tree)
-    completion_is_full_file = completion_redefines_every_name and (
-        completion_has_prologue or not starter_has_prologue
-    )
-    if not completion_spans or completion_is_full_file:
-        return completion_code
-
     starter_lines = starter_source.splitlines()
     completion_lines = completion_code.splitlines()
 
-    def lines_in(source_lines: list[str], span: tuple[int, int]) -> list[str]:
-        first_line, last_line = span
-        return source_lines[first_line - 1 : last_line]
+    # A bare fragment redefines every name in a small starter too (scenarios 02
+    # and 09 define just one), so name coverage alone misreads it as a rewrite
+    # (#26). A whole-file completion also either carries the starter's prologue
+    # or echoes at least one untouched definition; a fragment that adds its own
+    # import satisfies neither and is still spliced (its new prologue line is
+    # not merged in, so M3 undercounts that one line rather than counting every
+    # un-echoed starter line as a deletion).
+    completion_redefines_every_name = starter_spans.keys() <= completion_spans.keys()
+    starter_prologue = _prologue_lines(starter_tree, starter_lines)
+    completion_keeps_starter_prologue = starter_prologue <= _prologue_lines(
+        completion_tree, completion_lines
+    )
+    completion_is_full_file = completion_redefines_every_name and (
+        not starter_prologue
+        or completion_keeps_starter_prologue
+        or _completion_echoes_an_unchanged_definition(
+            starter_spans, completion_spans, starter_lines, completion_lines
+        )
+    )
+    if not completion_spans or completion_is_full_file:
+        return completion_code
 
     starter_defs_in_order = sorted(starter_spans.items(), key=lambda item: item[1][0])
     removed_names = _definitions_removed_by_fragment(
@@ -393,7 +431,7 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
             continue
         rebuilt.extend(starter_lines[next_starter_line - 1 : first_line - 1])
         if name in completion_spans:
-            rebuilt.extend(lines_in(completion_lines, completion_spans[name]))
+            rebuilt.extend(_lines_in_span(completion_lines, completion_spans[name]))
         else:
             rebuilt.extend(starter_lines[first_line - 1 : last_line])
         next_starter_line = last_line + 1
@@ -401,7 +439,7 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
 
     for name, span in completion_spans.items():
         if name not in starter_spans:
-            rebuilt.extend(["", "", *lines_in(completion_lines, span)])
+            rebuilt.extend(["", "", *_lines_in_span(completion_lines, span)])
 
     return "\n".join(rebuilt) + "\n"
 
