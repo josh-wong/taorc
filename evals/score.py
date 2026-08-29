@@ -302,15 +302,25 @@ def _top_level_definition_spans(tree: ast.Module) -> dict[str, tuple[int, int]]:
     return spans
 
 
+def _has_statements_beyond_definitions(tree: ast.Module) -> bool:
+    """True if the module carries a prologue -- a docstring, imports, or
+    module-level assignments -- alongside its top-level functions and classes.
+    A full-file completion reproduces that prologue; a bare function or class
+    fragment drops it."""
+    return any(
+        not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        for node in tree.body
+    )
+
+
 def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     """The starter file as this completion would leave it, so M3 measures the
     edit rather than how much unchanged code the model chose to echo.
 
-    A completion that returns the whole file (every top-level name the starter
-    defines is present) is scored as-is. One that returns only the changed or
-    added function is applied onto the starter: a top-level definition with a
-    matching name replaces the original, a new one is appended, and anything
-    the completion never mentions stays byte-for-byte."""
+    A completion that returns the whole file is scored as-is. One that returns
+    only the changed or added function is applied onto the starter: a top-level
+    definition with a matching name replaces the original, a new one is
+    appended, and anything the completion never mentions stays byte-for-byte."""
     try:
         starter_tree = ast.parse(starter_source)
         completion_tree = ast.parse(completion_code)
@@ -319,7 +329,16 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
 
     starter_spans = _top_level_definition_spans(starter_tree)
     completion_spans = _top_level_definition_spans(completion_tree)
-    completion_is_full_file = starter_spans.keys() <= completion_spans.keys()
+
+    # A bare fragment redefines every name in a small starter too (scenarios
+    # 02 and 09 define just one), so name coverage alone misreads it as a
+    # rewrite (#26). A real rewrite also carries the starter's prologue.
+    completion_redefines_every_name = starter_spans.keys() <= completion_spans.keys()
+    starter_has_prologue = _has_statements_beyond_definitions(starter_tree)
+    completion_has_prologue = _has_statements_beyond_definitions(completion_tree)
+    completion_is_full_file = completion_redefines_every_name and (
+        completion_has_prologue or not starter_has_prologue
+    )
     if not completion_spans or completion_is_full_file:
         return completion_code
 

@@ -86,6 +86,37 @@ def cart_total(cart):
         broken = "def remove_line(cart, sku:\n    return cart"
         self.assertEqual(reconstruct_edited_file(CART_STARTER, broken), broken)
 
+    def test_single_definition_starter_still_splices_a_bare_fragment(self):
+        """Scenario 09: the starter defines one function, so any completion
+        redefines every name -- the reconstruction must still keep the
+        starter's imports rather than score the fragment raw."""
+        starter = '''\
+import json
+from pathlib import Path
+
+
+def load_config(path):
+    return json.loads(Path(path).read_text())
+'''
+        fragment_dropping_imports = '''\
+def load_config(path):
+    try:
+        return json.loads(Path(path).read_text())
+    except FileNotFoundError:
+        raise SystemExit(f"no config at {path}")
+'''
+        rebuilt = reconstruct_edited_file(starter, fragment_dropping_imports)
+
+        self.assertIn("import json", rebuilt)
+        self.assertIn("from pathlib import Path", rebuilt)
+        # The edit is the try/except, not the two dropped import lines.
+        self.assertLessEqual(diff_line_count(starter, rebuilt), 5)
+
+    def test_single_definition_full_file_rewrite_is_scored_as_is(self):
+        starter = "import json\n\n\ndef load_config(path):\n    return json.load(open(path))\n"
+        full_file = "import json\nimport os\n\n\ndef load_config(path):\n    return json.load(open(os.path.expanduser(path)))\n"
+        self.assertEqual(reconstruct_edited_file(starter, full_file), full_file)
+
 
 if __name__ == "__main__":
     unittest.main()
