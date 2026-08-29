@@ -8,7 +8,9 @@ scenario/model/condition:
   - comment-to-code ratio, and the share of those comments that explain why
   - mean and max nesting depth
   - empty-word identifier count (N1's own word list)
-  - diff size vs. the starter file, on scenarios that measure it -> M3
+  - diff size of the edit vs. the starter file, on scenarios that
+    measure it -- invariant to whether the completion echoed the whole
+    file or returned only the changed function                    -> M3
 
 Nothing here calls a model or costs money; it is pure text analysis over
 files run_bench.py already wrote, which is what "deterministic, free"
@@ -287,6 +289,300 @@ def diff_line_count(before: str, after: str) -> int:
     )
 
 
+def _top_level_definition_spans(tree: ast.Module) -> dict[str, tuple[int, int]]:
+    """name -> (first_line, last_line), 1-indexed and inclusive, for every
+    top-level function or class. A decorator line is part of the span so a
+    completion that reformats decorators still swaps in cleanly."""
+    spans: dict[str, tuple[int, int]] = {}
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        first_line = min([node.lineno, *(d.lineno for d in node.decorator_list)])
+        spans[node.name] = (first_line, node.end_lineno)
+    return spans
+
+
+def _prologue_lines(tree: ast.Module, source_lines: list[str]) -> set[str]:
+    """Stripped, non-blank source lines of every top-level statement that is
+    not a function or class -- the module docstring, imports, and module-level
+    assignments. A full-file completion reproduces these lines; a fragment that
+    rewrites one function drops them."""
+    prologue: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for raw_line in source_lines[node.lineno - 1 : node.end_lineno]:
+            if raw_line.strip():
+                prologue.add(raw_line.strip())
+    return prologue
+
+
+def _completion_echoes_an_unchanged_definition(
+    starter_spans: dict[str, tuple[int, int]],
+    completion_spans: dict[str, tuple[int, int]],
+    starter_lines: list[str],
+    completion_lines: list[str],
+) -> bool:
+    """True if the completion reproduces at least one of the starter's
+    definitions verbatim. A fragment includes only what it changes, so echoing
+    an untouched definition is the signature of a whole-file rewrite -- the
+    reading that keeps a full-file completion's own deletions visible to M3."""
+    for name, starter_span in starter_spans.items():
+        completion_span = completion_spans.get(name)
+        if completion_span is None:
+            continue
+        starter_body = _lines_in_span(starter_lines, starter_span)
+        completion_body = _lines_in_span(completion_lines, completion_span)
+        if [line.strip() for line in starter_body] == [
+            line.strip() for line in completion_body
+        ]:
+            return True
+    return False
+
+
+def _lines_in_span(source_lines: list[str], span: tuple[int, int]) -> list[str]:
+    first_line, last_line = span
+    return source_lines[first_line - 1 : last_line]
+
+
+def _leading_whitespace(line: str) -> str:
+    return line[: len(line) - len(line.lstrip())]
+
+
+def _starter_method_spans(
+    tree: ast.Module, source_lines: list[str]
+) -> dict[str, list[tuple[str, tuple[int, int], str]]]:
+    """method name -> list of (owning class, (first_line, last_line), indent)
+    for every method of a top-level class. A completion that returns just the
+    one changed method -- dedented to column 0, so it parses as a top-level
+    function -- is spliced back into its class instead of appended as a stray
+    module-level function (#26). Scenario 02's starter is a single class with
+    no top-level function at all."""
+    methods: dict[str, list[tuple[str, tuple[int, int], str]]] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for child in node.body:
+            if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            first_line = min([child.lineno, *(d.lineno for d in child.decorator_list)])
+            indent = _leading_whitespace(source_lines[first_line - 1])
+            span = (first_line, child.end_lineno)
+            methods.setdefault(child.name, []).append((node.name, span, indent))
+    return methods
+
+
+def _reindent(body_lines: list[str], indent: str) -> list[str]:
+    """A completion method returned at column 0, re-indented to sit in a class
+    body so only the lines the model actually changed show up in the M3 diff."""
+    non_blank = [line for line in body_lines if line.strip()]
+    own_indent = min((len(_leading_whitespace(line)) for line in non_blank), default=0)
+    return [indent + line[own_indent:] if line.strip() else "" for line in body_lines]
+
+
+def _rebuild_class_with_method_edits(
+    starter_lines: list[str],
+    class_span: tuple[int, int],
+    completion_lines: list[str],
+    method_edits: list[tuple[tuple[int, int], str, tuple[int, int]]],
+) -> list[str]:
+    """The starter's class span with each edited method swapped in place and
+    every other line kept byte-for-byte."""
+    class_first, class_last = class_span
+    rebuilt: list[str] = []
+    next_line = class_first
+    for (method_first, method_last), indent, completion_span in sorted(method_edits):
+        rebuilt.extend(starter_lines[next_line - 1 : method_first - 1])
+        rebuilt.extend(
+            _reindent(_lines_in_span(completion_lines, completion_span), indent)
+        )
+        next_line = method_last + 1
+    rebuilt.extend(starter_lines[next_line - 1 : class_last])
+    return rebuilt
+
+
+def _definitions_removed_by_fragment(
+    starter_defs_in_order: list[tuple[str, tuple[int, int]]],
+    completion_spans: dict[str, tuple[int, int]],
+    names_still_referenced: set[str],
+) -> set[str]:
+    """Top-level names a fragment completion deleted rather than left alone.
+
+    A fragment says nothing about definitions outside the region it rewrites,
+    so one it simply omits is kept. But a definition that sits between two the
+    fragment does redefine, and that nothing surviving the splice still names,
+    was removed on purpose -- re-inserting it would hide the deletion from M3
+    (#26). "Nothing still names" is an AST check over both the completion and
+    every starter definition the fragment left untouched: a matching substring
+    in a string literal or a comment (`# inlined line_total`) does not count as
+    a use, but a call from an unchanged sibling function does."""
+    redefined_indices = [
+        index
+        for index, (name, _) in enumerate(starter_defs_in_order)
+        if name in completion_spans
+    ]
+    if len(redefined_indices) < 2:
+        return set()
+
+    rewritten_region = range(min(redefined_indices), max(redefined_indices) + 1)
+    removed: set[str] = set()
+    for index, (name, _span) in enumerate(starter_defs_in_order):
+        if name in completion_spans or index not in rewritten_region:
+            continue
+        if name not in names_still_referenced:
+            removed.add(name)
+    return removed
+
+
+def _names_referenced(tree: ast.Module) -> set[str]:
+    """Every identifier the code actually reads or writes -- `ast.Name` loads
+    and stores plus attribute accesses -- so a name that appears only inside a
+    string or comment is not mistaken for a live reference."""
+    referenced: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            referenced.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            referenced.add(node.attr)
+    return referenced
+
+
+def _names_referenced_by_kept_code(
+    tree: ast.Module, replaced_def_names: set[str]
+) -> set[str]:
+    """Identifiers read or written by the top-level statements a fragment splice
+    keeps byte-for-byte -- the prologue plus every definition the completion did
+    not redefine. A name used only by this surviving code is still live, so the
+    fragment omitting its definition is not a deletion (#26)."""
+    referenced: set[str] = set()
+    for node in tree.body:
+        is_definition = isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        )
+        if is_definition and node.name in replaced_def_names:
+            continue
+        for descendant in ast.walk(node):
+            if isinstance(descendant, ast.Name):
+                referenced.add(descendant.id)
+            elif isinstance(descendant, ast.Attribute):
+                referenced.add(descendant.attr)
+    return referenced
+
+
+def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
+    """The starter file as this completion would leave it, so M3 measures the
+    edit rather than how much unchanged code the model chose to echo.
+
+    A completion that returns the whole file is scored as-is. One that returns
+    only the changed or added function is applied onto the starter: a top-level
+    definition with a matching name replaces the original, a new one is
+    appended, one dropped from inside the rewritten region is deleted, and
+    anything else the completion never mentions stays byte-for-byte."""
+    try:
+        starter_tree = ast.parse(starter_source)
+        completion_tree = ast.parse(completion_code)
+    except SyntaxError:
+        return completion_code
+
+    starter_spans = _top_level_definition_spans(starter_tree)
+    completion_spans = _top_level_definition_spans(completion_tree)
+
+    starter_lines = starter_source.splitlines()
+    completion_lines = completion_code.splitlines()
+
+    # A bare fragment redefines every name in a small starter too (scenarios 02
+    # and 09 define just one), so name coverage alone misreads it as a rewrite
+    # (#26). A whole-file completion also either carries the starter's prologue
+    # or echoes at least one untouched definition; a fragment that adds its own
+    # import satisfies neither and is still spliced (its new prologue line is
+    # not merged in, so M3 undercounts that one line rather than counting every
+    # un-echoed starter line as a deletion).
+    completion_redefines_every_name = starter_spans.keys() <= completion_spans.keys()
+    starter_prologue = _prologue_lines(starter_tree, starter_lines)
+    completion_keeps_starter_prologue = bool(starter_prologue) and starter_prologue <= (
+        _prologue_lines(completion_tree, completion_lines)
+    )
+    completion_echoes_unchanged_definition = _completion_echoes_an_unchanged_definition(
+        starter_spans, completion_spans, starter_lines, completion_lines
+    )
+    # A whole-file completion that renamed or dropped a top-level definition on
+    # purpose no longer redefines every starter name, so the name-coverage test
+    # alone misreads it as a fragment and splices the stale definition back
+    # (#26). Reproducing the starter's entire prologue -- its docstring and
+    # imports -- is the signal that the model returned the whole file anyway; a
+    # bare fragment carries none of it. Redefining every one of two or more
+    # starter definitions is the same signal even when the prologue was
+    # deliberately dropped: a fragment does not rewrite the whole file.
+    completion_rewrites_every_definition = (
+        len(starter_spans) >= 2 and completion_redefines_every_name
+    )
+    completion_is_full_file = (
+        completion_keeps_starter_prologue
+        or completion_rewrites_every_definition
+        or (
+            completion_redefines_every_name
+            and (not starter_prologue or completion_echoes_unchanged_definition)
+        )
+    )
+    if not completion_spans or completion_is_full_file:
+        return completion_code
+
+    starter_defs_in_order = sorted(starter_spans.items(), key=lambda item: item[1][0])
+    names_still_referenced = _names_referenced(completion_tree) | (
+        _names_referenced_by_kept_code(starter_tree, set(completion_spans))
+    )
+    removed_names = _definitions_removed_by_fragment(
+        starter_defs_in_order, completion_spans, names_still_referenced
+    )
+
+    # A completion def that names no top-level starter definition but exactly
+    # one method of a top-level starter class is that method's rewrite, not a
+    # new module-level function (#26).
+    starter_method_spans = _starter_method_spans(starter_tree, starter_lines)
+    method_edits_by_class: dict[str, list[tuple[tuple[int, int], str, tuple[int, int]]]] = {}
+    spliced_method_names: set[str] = set()
+    for name, completion_span in completion_spans.items():
+        if name in starter_spans:
+            continue
+        owners = starter_method_spans.get(name, [])
+        if len(owners) != 1:
+            continue
+        owning_class, method_span, indent = owners[0]
+        method_edits_by_class.setdefault(owning_class, []).append(
+            (method_span, indent, completion_span)
+        )
+        spliced_method_names.add(name)
+
+    rebuilt: list[str] = []
+    next_starter_line = 1
+    for name, (first_line, last_line) in starter_defs_in_order:
+        if name in removed_names:
+            next_starter_line = last_line + 1
+            continue
+        rebuilt.extend(starter_lines[next_starter_line - 1 : first_line - 1])
+        if name in completion_spans:
+            rebuilt.extend(_lines_in_span(completion_lines, completion_spans[name]))
+        elif name in method_edits_by_class:
+            rebuilt.extend(
+                _rebuild_class_with_method_edits(
+                    starter_lines,
+                    (first_line, last_line),
+                    completion_lines,
+                    method_edits_by_class[name],
+                )
+            )
+        else:
+            rebuilt.extend(starter_lines[first_line - 1 : last_line])
+        next_starter_line = last_line + 1
+    rebuilt.extend(starter_lines[next_starter_line - 1 :])
+
+    for name, span in completion_spans.items():
+        if name not in starter_spans and name not in spliced_method_names:
+            rebuilt.extend(["", "", *_lines_in_span(completion_lines, span)])
+
+    return "\n".join(rebuilt) + "\n"
+
+
 def _starter_for_output_file(scenario: Scenario) -> str | None:
     """The starter the completion is meant to edit -- the one whose basename
     matches output_file. `next(iter(starter_files))` would compare the model
@@ -332,7 +628,8 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
                 file=sys.stderr,
             )
         else:
-            metrics["diff_lines_vs_starter"] = diff_line_count(starter_before, code)
+            code_after_edit = reconstruct_edited_file(starter_before, code)
+            metrics["diff_lines_vs_starter"] = diff_line_count(starter_before, code_after_edit)
 
     return metrics
 
