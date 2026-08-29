@@ -26,6 +26,22 @@ class ModelCallError(RuntimeError):
     """Raised when a provider call can't be made or fails outright."""
 
 
+# Every provider signals "I hit the token cap mid-answer" with one of these
+# in its finish/stop-reason field. A truncated completion is a syntactically
+# broken partial file; scoring or judging it as a finished answer skews
+# M1/M2/M3, so callers reject it instead of writing it.
+TRUNCATION_REASONS = frozenset({"length", "max_tokens", "MAX_TOKENS"})
+
+
+def _reject_if_truncated(label: str, finish_reason: str | None, sampler: SamplerSettings) -> None:
+    if finish_reason in TRUNCATION_REASONS:
+        raise ModelCallError(
+            f"{label}: completion truncated at max_tokens={sampler.max_tokens} "
+            f"(finish_reason={finish_reason!r}) -- raise max_tokens or shorten the "
+            f"task; a cut-off completion must not be scored as a finished answer"
+        )
+
+
 @dataclass(frozen=True)
 class SamplerSettings:
     """Recorded verbatim in RESULTS.md per design doc §10.3 -- reproducibility
@@ -144,6 +160,7 @@ def call_anthropic(spec: ModelSpec, system: str, user: str, sampler: SamplerSett
             "top_p": sampler.top_p,
         },
     )
+    _reject_if_truncated(spec.slot, response.get("stop_reason"), sampler)
     text = "".join(block.get("text", "") for block in response.get("content", []))
     if not text:
         raise ModelCallError(
@@ -174,12 +191,14 @@ def call_openai_chat(spec: ModelSpec, system: str, user: str, sampler: SamplerSe
         },
     )
     try:
-        content = response["choices"][0]["message"]["content"]
+        choice = response["choices"][0]
+        content = choice["message"]["content"]
     except (KeyError, IndexError) as error:
         raise ModelCallError(
             f"{spec.slot}: unexpected response shape from {base_url}/chat/completions "
             f"(no completion choices -- may be content-filtered): {response!r}"
         ) from error
+    _reject_if_truncated(spec.slot, choice.get("finish_reason"), sampler)
     if content is None:
         raise ModelCallError(
             f"{spec.slot}: null message content from {base_url}/chat/completions "
@@ -209,11 +228,19 @@ def call_ollama(model_id: str, system: str, user: str, sampler: SamplerSettings)
         },
     )
     try:
-        return response["message"]["content"]
+        content = response["message"]["content"]
     except KeyError as error:
         raise ModelCallError(
             f"ollama {model_id}: unexpected response shape: {response!r}"
         ) from error
+    _reject_if_truncated(f"ollama {model_id}", response.get("done_reason"), sampler)
+    if not content:
+        raise ModelCallError(
+            f"ollama {model_id}: empty content -- the model returned no text "
+            f"(check `ollama pull {model_id}` succeeded and the prompt fits its "
+            f"context window): {response!r}"
+        )
+    return content
 
 
 PROVIDER_CALLERS = {

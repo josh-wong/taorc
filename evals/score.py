@@ -88,37 +88,54 @@ def comment_ratio(code: str) -> float | None:
 
 def nesting_depth(code: str) -> tuple[int, float] | tuple[None, None]:
     """Max and mean nesting depth across the compound statements in the
-    module (if/for/while/try/with/function/class bodies), counted by AST
-    depth rather than indentation columns so formatting can't skew it."""
+    module (if/for/while/try/with/match/function/class bodies), counted by
+    AST structure rather than indentation columns so formatting can't skew
+    it.
+
+    A flat `if/elif/elif/else` chain counts as one level, not one more per
+    branch: `ast` nests each `elif` as an `If` inside the previous one's
+    `orelse`, but a reader sees a flat dispatch, and scoring it as deep
+    nesting would penalize the exact F-category restructuring the skill
+    asks for. `match` is treated the same way -- one level for the whole
+    statement, its case bodies at that same depth."""
     try:
         tree = ast.parse(code)
     except SyntaxError:
         return None, None
 
-    depths: list[int] = []
-    compound_types = (
+    block_depths: list[int] = []
+    nesting_types = (
         ast.If,
         ast.For,
+        ast.AsyncFor,
         ast.While,
         ast.Try,
         ast.With,
+        ast.AsyncWith,
+        ast.Match,
         ast.FunctionDef,
         ast.AsyncFunctionDef,
         ast.ClassDef,
     )
 
     def walk(node: ast.AST, depth: int) -> None:
-        is_compound = isinstance(node, compound_types)
-        next_depth = depth + 1 if is_compound else depth
-        if is_compound:
-            depths.append(next_depth)
+        is_nesting_block = isinstance(node, nesting_types)
+        block_depth = depth + 1 if is_nesting_block else depth
+        if is_nesting_block:
+            block_depths.append(block_depth)
         for child in ast.iter_child_nodes(node):
-            walk(child, next_depth)
+            child_is_elif = (
+                isinstance(node, ast.If)
+                and isinstance(child, ast.If)
+                and len(node.orelse) == 1
+                and child is node.orelse[0]
+            )
+            walk(child, depth if child_is_elif else block_depth)
 
     walk(tree, 0)
-    if not depths:
+    if not block_depths:
         return 0, 0.0
-    return max(depths), round(sum(depths) / len(depths), 2)
+    return max(block_depths), round(sum(block_depths) / len(block_depths), 2)
 
 
 def _assignment_target_names(target: ast.AST) -> list[tuple[str, int]]:
