@@ -223,10 +223,17 @@ def call_anthropic(spec: ModelSpec, system: str, user: str, sampler: SamplerSett
     return text
 
 
+def _token_limit_field(provider: str) -> str:
+    """OpenAI's own API rejects `max_tokens` on its current models and wants
+    `max_completion_tokens`; the OpenAI-compatible hosts (OpenRouter,
+    Together, Fireworks) that serve the open-weights slot still take the
+    older `max_tokens`. Same Chat Completions wire format otherwise."""
+    return "max_completion_tokens" if provider == "openai" else "max_tokens"
+
+
 def call_openai_chat(spec: ModelSpec, system: str, user: str, sampler: SamplerSettings) -> str:
     """Chat Completions call, used for both OpenAI itself and any
-    OpenAI-compatible hosted endpoint (OpenRouter, Together, Fireworks) --
-    the wire format is the same across all of them."""
+    OpenAI-compatible hosted endpoint (OpenRouter, Together, Fireworks)."""
     api_key = _require_api_key(spec)
     base_url = spec.base_url or "https://api.openai.com/v1"
     response = _post_json(
@@ -238,7 +245,7 @@ def call_openai_chat(spec: ModelSpec, system: str, user: str, sampler: SamplerSe
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "max_tokens": sampler.max_tokens,
+            _token_limit_field(spec.provider): sampler.max_tokens,
             "temperature": sampler.temperature,
             "top_p": sampler.top_p,
         },
