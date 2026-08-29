@@ -12,7 +12,7 @@ Code, is a manual step recorded elsewhere, not this script.
 
     python evals/run_triggers.py --out evals/results/2026-08-29
     python evals/run_triggers.py --out evals/results/2026-08-29 --dry-run
-    python evals/run_triggers.py --out evals/results/2026-08-29 --limit 5
+    python evals/run_triggers.py --out evals/results/2026-08-29 --limit 6
 
 Results land under ``<out>/triggers/`` following run_bench.py's layout: one
 ``raw/<id>.json`` per classified prompt, ``raw/<id>.error.json`` for a call
@@ -97,8 +97,9 @@ def build_classifier_prompt(skill: SkillIdentity, request: str) -> str:
 
 
 def parse_activation(response_text: str) -> bool:
-    """The classifier's verdict as a bool. Raises ModelCallError on a
-    response with no usable ``activate`` verdict rather than guessing -- an
+    """The classifier's verdict as a bool. Prefers a JSON ``{"activate": ...}``
+    object; falls back to a yes/no word from a prose reply. Raises
+    ModelCallError only when neither yields a verdict rather than guessing -- an
     unparseable verdict is a failed cell, recorded and retried, not a silent
     false that would skew the false-fire rate."""
     for verdict_object in _json_objects(response_text):
@@ -107,9 +108,30 @@ def parse_activation(response_text: str) -> bool:
         verdict = _as_activation_bool(verdict_object["activate"])
         if verdict is not None:
             return verdict
+    prose_verdict = _activation_from_prose(response_text)
+    if prose_verdict is not None:
+        return prose_verdict
     raise ModelCallError(
         f"classifier response has no usable 'activate' verdict: {response_text!r}"
     )
+
+
+def _activation_from_prose(text: str) -> bool | None:
+    """A best-effort verdict from a model that answered in prose instead of
+    the requested JSON object (``Yes, this should activate.``). Without this a
+    single such reply fails permanently: temperature is 0, so the same prompt
+    re-fails identically on every rerun, and one unparseable cell holds
+    ``meets_m4`` at false forever. The first activation word wins, matching how
+    these replies open (``Yes...`` / ``No...``); a reply with no such word
+    still raises. ``activate`` is left out of the match set on purpose -- it
+    echoes the question (``Should this skill activate?``) and would read a
+    ``should not activate`` sentence as a yes."""
+    prose_words = {"yes": True, "true": True, "no": False, "false": False, "skip": False}
+    for match in re.finditer(r"[a-z]+", text.lower()):
+        verdict = prose_words.get(match.group())
+        if verdict is not None:
+            return verdict
+    return None
 
 
 def _json_objects(text: str) -> Iterator[object]:
@@ -174,7 +196,11 @@ def classify_one(
         response_text = generate(spec, system_prompt, user_prompt, CLASSIFIER_SAMPLER)
         activated = parse_activation(response_text)
     except ModelCallError as error:
-        classification_path.unlink(missing_ok=True)
+        # Leave any previously-saved classification in place. A transient API
+        # error while re-classifying a STALE cell shouldn't destroy the last
+        # good verdict on disk -- _resumable() already refuses to reuse a stale
+        # cell, so the next rerun re-classifies it anyway, and until then the
+        # old result beats no result. The .error.json marks it for retry.
         error_path.write_text(
             json.dumps(
                 {
@@ -269,7 +295,7 @@ def summarize(
     meets_activation = activation_rate is not None and activation_rate >= 90.0
     meets_false_fire = false_fire_rate is not None and false_fire_rate <= 10.0
     # A rate computed over a subset of the suite -- because cells failed to
-    # classify, or --limit ran only the first N -- is not an M4 verdict. The
+    # classify, or --limit sampled only N -- is not an M4 verdict. The
     # missing prompts could all be misses; reporting "meets M4" off what
     # happened to succeed is how a tuning decision gets made against an
     # instrument that measured half the suite.
@@ -339,7 +365,8 @@ def main() -> int:
         "--limit",
         type=int,
         default=None,
-        help="classify only the first N prompts -- a cheap smoke test of the runner",
+        help="classify only N prompts, drawn alternately from positives and "
+        "negatives -- a cheap smoke test of the runner that still hits both paths",
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="print what would be sent, call nothing"
@@ -356,7 +383,7 @@ def main() -> int:
 
     suite = load_suite()
     skill = skill_identity()
-    prompts = suite[: args.limit] if args.limit is not None else suite
+    prompts = _limited_sample(suite, args.limit) if args.limit is not None else suite
 
     if args.dry_run:
         print(f"skill name: {skill.name}")
@@ -390,7 +417,7 @@ def main() -> int:
     summary["failed_prompt_ids"] = sorted(failed_prompt_ids)
     summary["limited_to_first_n"] = args.limit
 
-    # A --limit run scores only the first N prompts, so its meets_m4 is false
+    # A --limit run scores only a sample of N prompts, so its meets_m4 is false
     # and its rates cover a fraction of the suite. Writing that to
     # triggers_summary.json would clobber a real full-pass verdict sitting in
     # the same --out directory (RESULTS.md publication reads that file), so a
@@ -414,7 +441,7 @@ def main() -> int:
     print(f"  meets M4: {'yes' if summary['meets_m4'] else 'no'}")
     if not ran_whole_suite:
         print(
-            f"  NOTE: --limit {args.limit} scored only the first {len(prompts)} "
+            f"  NOTE: --limit {args.limit} scored only {len(prompts)} "
             "prompts; this is a runner smoke test, not an M4 verdict."
         )
     if failed_prompt_ids:
@@ -427,10 +454,27 @@ def main() -> int:
     # A partial pass is a non-zero exit, not a green run with a stderr line:
     # meets_m4 is already false, and an on-demand or CI caller should see the
     # failure rather than trust a summary written over a shrunken sample. A
-    # --limit run is a partial pass by construction -- it scored only the first
-    # N prompts -- so it fails the exit code too, matching the docstring and
+    # --limit run is a partial pass by construction -- it scored only N of the
+    # 100 prompts -- so it fails the exit code too, matching the docstring and
     # evals/README.md.
     return 1 if (failed_prompt_ids or not ran_whole_suite) else 0
+
+
+def _limited_sample(suite: list[TriggerPrompt], limit: int) -> list[TriggerPrompt]:
+    """The first ``limit`` prompts, but drawn alternately from positives and
+    negatives so a smoke test exercises both classification paths and the
+    negative-side summary math. The suite lists all 60 positives before any
+    negative, so a plain ``suite[:limit]`` never scores a negative -- a
+    regression in false-fire bucketing would then pass every smoke test and
+    only surface in a paid full pass. Order within each label is preserved."""
+    positives = [p for p in suite if p.should_activate]
+    negatives = [p for p in suite if not p.should_activate]
+    interleaved: list[TriggerPrompt] = []
+    for positive, negative in zip(positives, negatives):
+        interleaved.extend((positive, negative))
+    longer_tail = positives[len(negatives):] or negatives[len(positives):]
+    interleaved.extend(longer_tail)
+    return interleaved[:limit]
 
 
 def _fmt_pct(value: float | None) -> str:

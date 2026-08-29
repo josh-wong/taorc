@@ -97,7 +97,7 @@ finishes in under a minute.
 export ANTHROPIC_API_KEY=...
 
 python evals/run_triggers.py --out evals/results/2026-08-29 --dry-run  # no key needed
-python evals/run_triggers.py --out evals/results/2026-08-29 --limit 5  # cheap smoke test
+python evals/run_triggers.py --out evals/results/2026-08-29 --limit 6  # cheap smoke test (3 positive + 3 negative)
 python evals/run_triggers.py --out evals/results/2026-08-29            # full pass
 ```
 
