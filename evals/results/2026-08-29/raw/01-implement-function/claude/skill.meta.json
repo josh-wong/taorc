@@ -1,0 +1,14 @@
+{
+  "scenario_id": "01-implement-function",
+  "model_slot": "claude",
+  "model_id": "claude-opus-5",
+  "provider": "anthropic",
+  "condition": "skill",
+  "skill_artifact": "skill_md",
+  "sampler": {
+    "max_tokens": 4000,
+    "temperature": "model default (override rejected by API)",
+    "top_p": "model default (override rejected by API)"
+  },
+  "generated_at": "2026-08-29T09:35:25.052663+00:00"
+}

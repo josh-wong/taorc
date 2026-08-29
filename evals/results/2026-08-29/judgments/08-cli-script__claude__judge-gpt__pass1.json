@@ -1,0 +1,35 @@
+{
+  "judge_model_id": "gpt-5.1",
+  "skill_labeled": "B",
+  "raw_response": "{\n  \"preference\": \"B\",\n  \"rubric_a\": {\n    \"N\": 4,\n    \"C\": 4,\n    \"F\": 3,\n    \"S\": 4\n  },\n  \"rubric_b\": {\n    \"N\": 5,\n    \"C\": 4,\n    \"F\": 5,\n    \"S\": 5\n  }\n}",
+  "parsed": {
+    "preference": "B",
+    "rubric_a": {
+      "N": 4,
+      "C": 4,
+      "F": 3,
+      "S": 4
+    },
+    "rubric_b": {
+      "N": 5,
+      "C": 4,
+      "F": 5,
+      "S": 5
+    }
+  },
+  "preferred_condition": "skill",
+  "rubric_by_condition": {
+    "skill": {
+      "N": 5,
+      "C": 4,
+      "F": 5,
+      "S": 5
+    },
+    "baseline": {
+      "N": 4,
+      "C": 4,
+      "F": 3,
+      "S": 4
+    }
+  }
+}
