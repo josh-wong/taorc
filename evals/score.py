@@ -221,7 +221,7 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
     if findings is not None and loc:
         findings_per_100_loc = round(len(findings) * 100 / loc, 2)
 
-    result = {
+    metrics = {
         "loc": loc,
         "lint_findings": len(findings) if findings is not None else None,
         "lint_findings_per_100_loc": findings_per_100_loc,
@@ -234,7 +234,7 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
     if scenario.measure_diff_size and scenario.starter_files:
         starter_path = next(iter(scenario.starter_files))
         before = scenario.starter_files[starter_path]
-        result["diff_lines_vs_starter"] = diff_line_count(before, code)
+        metrics["diff_lines_vs_starter"] = diff_line_count(before, code)
     elif scenario.measure_diff_size:
         print(
             f"  WARNING {scenario.id}: measure_diff_size is set but starter_files is "
@@ -242,7 +242,7 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
             file=sys.stderr,
         )
 
-    return result
+    return metrics
 
 
 def score_run(run_dir: Path) -> dict:
@@ -323,9 +323,9 @@ def main() -> int:
     scores = score_run(run_dir)
     guardrail = summarize_guardrail(scores)
 
-    output = {"scores": scores, "guardrail_diff_inflation_pct": guardrail}
+    scores_document = {"scores": scores, "guardrail_diff_inflation_pct": guardrail}
     scores_path = run_dir / "scores.json"
-    scores_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
+    scores_path.write_text(json.dumps(scores_document, indent=2), encoding="utf-8")
     print(f"wrote {scores_path}")
     for model_slot, inflation_pct in guardrail.items():
         print(f"  {model_slot}: diff-size inflation {inflation_pct:+.1f}% (M3 target <= 10%)")
