@@ -118,7 +118,7 @@
           "max_nesting_depth": 3,
           "mean_nesting_depth": 2.0,
           "empty_word_identifier_count": 0,
-          "diff_lines_vs_starter": 24
+          "diff_lines_vs_starter": 8
         }
       },
       "gpt": {
@@ -474,7 +474,7 @@
     }
   },
   "guardrail_diff_inflation_pct": {
-    "claude": 58.1,
+    "claude": -8.5,
     "gpt": -5.4
   },
   "generation_errors": []

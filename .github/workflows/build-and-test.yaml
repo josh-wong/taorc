@@ -46,6 +46,9 @@ jobs:
       - name: Run the CI validation gate
         run: python scripts/validate.py
 
+      - name: Run the eval scoring tests
+        run: python evals/tests/test_score.py -v
+
   # §9 items 8-9: installer behavior and placement-matrix tests need to pass
   # on all three OSes, since install.sh and install.ps1 each have to work
   # standalone -- a Linux-only pass would never catch a bash-ism install.ps1

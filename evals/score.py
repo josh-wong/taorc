@@ -8,7 +8,9 @@ scenario/model/condition:
   - comment-to-code ratio, and the share of those comments that explain why
   - mean and max nesting depth
   - empty-word identifier count (N1's own word list)
-  - diff size vs. the starter file, on scenarios that measure it -> M3
+  - diff size of the edit vs. the starter file, on scenarios that
+    measure it -- invariant to whether the completion echoed the whole
+    file or returned only the changed function                    -> M3
 
 Nothing here calls a model or costs money; it is pure text analysis over
 files run_bench.py already wrote, which is what "deterministic, free"
@@ -287,6 +289,66 @@ def diff_line_count(before: str, after: str) -> int:
     )
 
 
+def _top_level_definition_spans(tree: ast.Module) -> dict[str, tuple[int, int]]:
+    """name -> (first_line, last_line), 1-indexed and inclusive, for every
+    top-level function or class. A decorator line is part of the span so a
+    completion that reformats decorators still swaps in cleanly."""
+    spans: dict[str, tuple[int, int]] = {}
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        first_line = min([node.lineno, *(d.lineno for d in node.decorator_list)])
+        spans[node.name] = (first_line, node.end_lineno)
+    return spans
+
+
+def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
+    """The starter file as this completion would leave it, so M3 measures the
+    edit rather than how much unchanged code the model chose to echo.
+
+    A completion that returns the whole file (every top-level name the starter
+    defines is present) is scored as-is. One that returns only the changed or
+    added function is applied onto the starter: a top-level definition with a
+    matching name replaces the original, a new one is appended, and anything
+    the completion never mentions stays byte-for-byte."""
+    try:
+        starter_tree = ast.parse(starter_source)
+        completion_tree = ast.parse(completion_code)
+    except SyntaxError:
+        return completion_code
+
+    starter_spans = _top_level_definition_spans(starter_tree)
+    completion_spans = _top_level_definition_spans(completion_tree)
+    completion_is_full_file = starter_spans.keys() <= completion_spans.keys()
+    if not completion_spans or completion_is_full_file:
+        return completion_code
+
+    starter_lines = starter_source.splitlines()
+    completion_lines = completion_code.splitlines()
+
+    def lines_in(source_lines: list[str], span: tuple[int, int]) -> list[str]:
+        first_line, last_line = span
+        return source_lines[first_line - 1 : last_line]
+
+    rebuilt: list[str] = []
+    next_starter_line = 1
+    for name, span in sorted(starter_spans.items(), key=lambda item: item[1][0]):
+        first_line, last_line = span
+        rebuilt.extend(starter_lines[next_starter_line - 1 : first_line - 1])
+        if name in completion_spans:
+            rebuilt.extend(lines_in(completion_lines, completion_spans[name]))
+        else:
+            rebuilt.extend(starter_lines[first_line - 1 : last_line])
+        next_starter_line = last_line + 1
+    rebuilt.extend(starter_lines[next_starter_line - 1 :])
+
+    for name, span in completion_spans.items():
+        if name not in starter_spans:
+            rebuilt.extend(["", "", *lines_in(completion_lines, span)])
+
+    return "\n".join(rebuilt) + "\n"
+
+
 def _starter_for_output_file(scenario: Scenario) -> str | None:
     """The starter the completion is meant to edit -- the one whose basename
     matches output_file. `next(iter(starter_files))` would compare the model
@@ -332,7 +394,8 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
                 file=sys.stderr,
             )
         else:
-            metrics["diff_lines_vs_starter"] = diff_line_count(starter_before, code)
+            code_after_edit = reconstruct_edited_file(starter_before, code)
+            metrics["diff_lines_vs_starter"] = diff_line_count(starter_before, code_after_edit)
 
     return metrics
 

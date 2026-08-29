@@ -104,34 +104,32 @@ Target: **≤ 10% inflation**, skill vs. baseline, on scenarios 02 / 03 / 09
 
 | Slot | Inflation | vs. target |
 | ---- | --------- | ---------- |
-| claude | **+58.1%** | miss |
+| claude | **−8.5%** | pass |
 | gpt | −5.4% | pass |
 
-Per scenario (diff lines vs. starter, baseline → skill):
+Per scenario (diff lines of the edit vs. starter, baseline → skill):
 
 | Scenario | claude | gpt |
 | -------- | ------ | --- |
 | 02-fix-bug | 3 → 3 | 3 → 3 |
-| 03-add-feature | 8 → 24 | 9 → 9 |
+| 03-add-feature | 8 → 8 | 9 → 9 |
 | 09-add-error-handling | 43 → 32 | 31 → 26 |
 
-The `claude` miss is **entirely scenario 03**, and inspection of the raw
-output shows it is a scoring artifact, not the skill over-editing:
+On scenario 03 the two `claude` completions returned the edit in different
+shapes — the baseline echoed the whole `cart.py`, the skill returned only
+the new `remove_line` function — but both represent the same ~4-line
+addition, so both now score an 8-line diff. Scenario 09 shows the skill
+*reducing* the diff (43 → 32); scenario 02 is identical on both slots.
 
-- The **baseline** completion echoed the whole `cart.py` file (docstring +
-  all four functions) with `remove_line` added, so the diff against the
-  starter is small and clean.
-- The **skill** completion returned **only the new `remove_line` function**
-  — four lines, exactly what "add a `remove_line` function" asked for, and
-  the more restrained answer. `score.py` then diffs that fragment against
-  the full starter file and counts every un-echoed starter line as a
-  deletion, inflating the number.
-
-Scenarios 02 (identical diff) and 09 (skill *reduced* the diff, 43 → 32)
-show no inflation. `diff_lines_vs_starter` assumes the completion is a full
-file; it is tracked as **#23** and must be fixed before #9 tunes M3. It is
-not fixed here because it is a methodology change, not a one-line fix, and
-this run is baseline-only.
+**Correction (#23).** The first version of this run scored `claude`
+scenario 03 skill at a 24-line diff and reported M3 as **+58.1% (miss)**.
+`diff_lines_vs_starter` diffed the returned fragment against the full
+starter and counted every un-echoed starter line as a deletion. The fix
+(`score.py` `reconstruct_edited_file`) applies a fragment onto the starter
+before diffing, so the metric measures the edit rather than the output
+format. `scores.json` and the numbers above were regenerated with the
+fixed scorer; no other cell changed, and the M2/judge inputs are
+untouched.
 
 ### Descriptive automated metrics (no PRD target)
 
@@ -225,15 +223,15 @@ step and was **not** done for this run.
 
 ## Summary against PRD targets
 
-Two of the four metrics meet their target as a baseline; M2 and the `claude`
-half of M3 miss. Neither miss blocks #21 — this run is the fixed point #9
-tunes from — but both are real and are analysed in their sections above.
+Three of the four metrics meet their target as a baseline; M2 misses. That
+miss does not block #21 — this run is the fixed point #9 tunes from — but it
+is real and is analysed in its section above.
 
 | Metric | Target | Result | Status |
 | ------ | ------ | ------ | ------ |
 | M1 — lint reduction, skill vs. baseline | ≥ 60% | −84.9% pooled (claude −89.5%, gpt −50.0%) | **pass** pooled; gpt slot misses on n = 2 |
 | M2 — blind pairwise skill preference | ≥ 70% | 45% (18 / 40) | **miss** |
-| M3 — diff inflation on scenarios 02/03/09 | ≤ 10% | claude +58.1%, gpt −5.4% | **miss** on claude (scenario 03 scoring artifact) |
+| M3 — diff inflation on scenarios 02/03/09 | ≤ 10% | claude −8.5%, gpt −5.4% | **pass** (regenerated after the #23 scorer fix) |
 | M4 — trigger activation / false fire | ≥ 90% / ≤ 10% | 98.3% / 0.0% | **pass** |
 
 ## Known gaps
@@ -244,9 +242,11 @@ tunes from — but both are real and are analysed in their sections above.
   fallback prompt, design doc §14.3), and the second cross-judge on every
   pair. M2 therefore rests on a single judge per pair. `run_bench.py` skips
   a keyless slot with a warning, so the run was not blocked.
-- **M3 harness bug (#23).** `diff_lines_vs_starter` assumes a full-file
-  completion; it misfires when a completion returns only the changed
-  function (see M3 section). Must be fixed before #9 tunes M3.
+- **M3 scorer fix (#23), applied.** `diff_lines_vs_starter` had assumed a
+  full-file completion and misfired when a completion returned only the
+  changed function. Fixed in `score.py`; this run's `scores.json` and the
+  M3 section were regenerated with the fixed scorer (see the correction
+  note in the M3 section).
 - **`max_tokens` changed mid-run** (4000 → 16000). Every stored completion
   is complete, but the two halves were generated under different caps.
 - **Tier-2 trigger spot check** (real Claude Code, 10 prompts) not done.
