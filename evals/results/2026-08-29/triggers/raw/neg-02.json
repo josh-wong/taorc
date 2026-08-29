@@ -1,0 +1,15 @@
+{
+  "prompt_id": "neg-02",
+  "label": "negative",
+  "category": "prose-readability",
+  "prompt": "Tighten this error message so it is less wordy.",
+  "should_activate": false,
+  "activated": false,
+  "correct": true,
+  "model_slot": "claude",
+  "model_id": "claude-opus-5",
+  "skill_name": "readable-code",
+  "skill_description": "Write, comment, and review code so the next reader understands it in the least time. Applies on any code-writing, editing, refactoring, or code-review task, and specifically when naming things, writing or editing comments and docstrings, simplifying conditionals, or writing tests. Also use when asked to \"make this readable\", \"clean up the comments\", \"review this for readability\", \"improve these names\", or when removing AI-generated code tells such as step-by-step narration comments, banner comments, or empty names like data, result, and handler. Based on The Art of Readable Code (Boswell & Foucher).",
+  "raw_response": "{\"activate\": false}",
+  "classified_at": "2026-08-29T09:54:14.813957+00:00"
+}

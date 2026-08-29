@@ -77,11 +77,13 @@ class SamplerSettings:
 #
 # max_tokens is a hard cliff, not a soft budget: a completion that hits it
 # is rejected as truncated and recorded as a durable generation failure that
-# re-fails identically on every rerun. 4000 tokens (~500 lines) clears the
-# longest legitimate answer any scenario here asks for -- a test module or a
-# de-slopped file -- so a real cut-off signals a runaway model, not a cap
-# set too low.
-DEFAULT_SAMPLER = SamplerSettings(temperature=0.2, top_p=1.0, max_tokens=4000)
+# re-fails identically on every rerun. The cap has to cover both the written
+# answer (~500 lines is the longest any scenario asks for -- a test module or
+# a de-slopped file) and the reasoning tokens the current Claude and OpenAI
+# models emit before it, since those count against the same budget and are
+# not separately controllable here. 16000 leaves ample room for both, so a
+# real cut-off still signals a runaway model rather than a cap set too low.
+DEFAULT_SAMPLER = SamplerSettings(temperature=0.2, top_p=1.0, max_tokens=16000)
 
 
 @dataclass(frozen=True)
@@ -211,13 +213,16 @@ def call_anthropic(spec: ModelSpec, system: str, user: str, sampler: SamplerSett
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         },
+        # The Anthropic 4.6+ models (the matrix's Claude slot runs on
+        # claude-opus-5) reject `temperature` and `top_p` outright -- an
+        # HTTP 400, not a silent ignore -- so max_tokens is the only sampler
+        # field they take. The slot runs at the model's default sampling and
+        # applied_sampler() records that for RESULTS.md.
         {
             "model": spec.model_id,
             "system": system,
             "messages": [{"role": "user", "content": user}],
             "max_tokens": sampler.max_tokens,
-            "temperature": sampler.temperature,
-            "top_p": sampler.top_p,
         },
     )
     _reject_if_truncated(spec.slot, response.get("stop_reason"), sampler)
@@ -315,6 +320,24 @@ PROVIDER_CALLERS = {
     "openai": call_openai_chat,
     "openai-compatible": call_openai_chat,
 }
+
+
+def applied_sampler(spec: ModelSpec, sampler: SamplerSettings = DEFAULT_SAMPLER) -> dict:
+    """The sampler settings the provider actually honored, for RESULTS.md's
+    §10.3 reproducibility record. The Anthropic 4.6+ models reject a
+    `temperature`/`top_p` override, so the Claude slot's only variance
+    control is `max_tokens` plus whatever the model defaults to."""
+    if spec.provider == "anthropic":
+        return {
+            "max_tokens": sampler.max_tokens,
+            "temperature": "model default (override rejected by API)",
+            "top_p": "model default (override rejected by API)",
+        }
+    return {
+        "temperature": sampler.temperature,
+        "top_p": sampler.top_p,
+        "max_tokens": sampler.max_tokens,
+    }
 
 
 def generate(

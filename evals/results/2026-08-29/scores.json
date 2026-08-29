@@ -1,0 +1,481 @@
+{
+  "scores": {
+    "01-implement-function": {
+      "claude": {
+        "baseline": {
+          "loc": 53,
+          "lint_findings": 2,
+          "lint_findings_per_100_loc": 3.77,
+          "comment_to_code_ratio": 0.075,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.71,
+          "empty_word_identifier_count": 2
+        },
+        "skill": {
+          "loc": 31,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.097,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.67,
+          "empty_word_identifier_count": 0
+        }
+      },
+      "gpt": {
+        "baseline": {
+          "loc": 29,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.103,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.5,
+          "empty_word_identifier_count": 0
+        },
+        "skill": {
+          "loc": 24,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.67,
+          "empty_word_identifier_count": 0
+        }
+      }
+    },
+    "02-fix-bug": {
+      "claude": {
+        "baseline": {
+          "loc": 14,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.071,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 3
+        },
+        "skill": {
+          "loc": 14,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.071,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 3
+        }
+      },
+      "gpt": {
+        "baseline": {
+          "loc": 14,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.071,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 3
+        },
+        "skill": {
+          "loc": 14,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.071,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 3
+        }
+      }
+    },
+    "03-add-feature": {
+      "claude": {
+        "baseline": {
+          "loc": 19,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 1.5,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 8
+        },
+        "skill": {
+          "loc": 6,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 24
+        }
+      },
+      "gpt": {
+        "baseline": {
+          "loc": 20,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.05,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 1.5,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 9
+        },
+        "skill": {
+          "loc": 20,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.05,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 1.5,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 9
+        }
+      }
+    },
+    "04-write-tests": {
+      "claude": {
+        "baseline": {
+          "loc": 38,
+          "lint_findings": 6,
+          "lint_findings_per_100_loc": 15.79,
+          "comment_to_code_ratio": 0.263,
+          "why_comment_share": 0.6,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.15,
+          "empty_word_identifier_count": 0
+        },
+        "skill": {
+          "loc": 16,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.062,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.17,
+          "empty_word_identifier_count": 0
+        }
+      },
+      "gpt": {
+        "baseline": {
+          "loc": 23,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.261,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.2,
+          "empty_word_identifier_count": 0
+        },
+        "skill": {
+          "loc": 18,
+          "lint_findings": 1,
+          "lint_findings_per_100_loc": 5.56,
+          "comment_to_code_ratio": 0.167,
+          "why_comment_share": 0.667,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0
+        }
+      }
+    },
+    "05-parse-transform": {
+      "claude": {
+        "baseline": {
+          "loc": 58,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.017,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0
+        },
+        "skill": {
+          "loc": 25,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.25,
+          "empty_word_identifier_count": 0
+        }
+      },
+      "gpt": {
+        "baseline": {
+          "loc": 56,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.143,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.33,
+          "empty_word_identifier_count": 0
+        },
+        "skill": {
+          "loc": 52,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.115,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.22,
+          "empty_word_identifier_count": 0
+        }
+      }
+    },
+    "06-api-handler": {
+      "claude": {
+        "baseline": {
+          "loc": 111,
+          "lint_findings": 5,
+          "lint_findings_per_100_loc": 4.5,
+          "comment_to_code_ratio": 0.135,
+          "why_comment_share": 0.8,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 1.84,
+          "empty_word_identifier_count": 2
+        },
+        "skill": {
+          "loc": 71,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.042,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.76,
+          "empty_word_identifier_count": 0
+        }
+      },
+      "gpt": {
+        "baseline": {
+          "loc": 65,
+          "lint_findings": 1,
+          "lint_findings_per_100_loc": 1.54,
+          "comment_to_code_ratio": 0.169,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.87,
+          "empty_word_identifier_count": 1
+        },
+        "skill": {
+          "loc": 54,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.056,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.83,
+          "empty_word_identifier_count": 0
+        }
+      }
+    },
+    "07-refactor-nesting": {
+      "claude": {
+        "baseline": {
+          "loc": 46,
+          "lint_findings": 1,
+          "lint_findings_per_100_loc": 2.17,
+          "comment_to_code_ratio": 0.13,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 1.91,
+          "empty_word_identifier_count": 1
+        },
+        "skill": {
+          "loc": 40,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.25,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.11,
+          "empty_word_identifier_count": 0
+        }
+      },
+      "gpt": {
+        "baseline": {
+          "loc": 29,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 4,
+          "mean_nesting_depth": 2.56,
+          "empty_word_identifier_count": 0
+        },
+        "skill": {
+          "loc": 28,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.44,
+          "empty_word_identifier_count": 0
+        }
+      }
+    },
+    "08-cli-script": {
+      "claude": {
+        "baseline": {
+          "loc": 66,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.045,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 1.67,
+          "empty_word_identifier_count": 0
+        },
+        "skill": {
+          "loc": 43,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.047,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 4,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0
+        }
+      },
+      "gpt": {
+        "baseline": {
+          "loc": 41,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.049,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 5,
+          "mean_nesting_depth": 2.38,
+          "empty_word_identifier_count": 0
+        },
+        "skill": {
+          "loc": 63,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.032,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 4,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0
+        }
+      }
+    },
+    "09-add-error-handling": {
+      "claude": {
+        "baseline": {
+          "loc": 43,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 1.83,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 43
+        },
+        "skill": {
+          "loc": 33,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.061,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 1.83,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 32
+        }
+      },
+      "gpt": {
+        "baseline": {
+          "loc": 26,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 31
+        },
+        "skill": {
+          "loc": 28,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 3,
+          "mean_nesting_depth": 2.0,
+          "empty_word_identifier_count": 0,
+          "diff_lines_vs_starter": 26
+        }
+      }
+    },
+    "10-de-slop": {
+      "claude": {
+        "baseline": {
+          "loc": 12,
+          "lint_findings": 1,
+          "lint_findings_per_100_loc": 8.33,
+          "comment_to_code_ratio": 0.083,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 1,
+          "mean_nesting_depth": 1.0,
+          "empty_word_identifier_count": 1
+        },
+        "skill": {
+          "loc": 12,
+          "lint_findings": 1,
+          "lint_findings_per_100_loc": 8.33,
+          "comment_to_code_ratio": 0.083,
+          "why_comment_share": 1.0,
+          "max_nesting_depth": 1,
+          "mean_nesting_depth": 1.0,
+          "empty_word_identifier_count": 1
+        }
+      },
+      "gpt": {
+        "baseline": {
+          "loc": 11,
+          "lint_findings": 1,
+          "lint_findings_per_100_loc": 9.09,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 1,
+          "mean_nesting_depth": 1.0,
+          "empty_word_identifier_count": 1
+        },
+        "skill": {
+          "loc": 13,
+          "lint_findings": 0,
+          "lint_findings_per_100_loc": 0.0,
+          "comment_to_code_ratio": 0.0,
+          "why_comment_share": null,
+          "max_nesting_depth": 2,
+          "mean_nesting_depth": 1.33,
+          "empty_word_identifier_count": 0
+        }
+      }
+    }
+  },
+  "guardrail_diff_inflation_pct": {
+    "claude": 58.1,
+    "gpt": -5.4
+  },
+  "generation_errors": []
+}

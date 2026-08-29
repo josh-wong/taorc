@@ -35,7 +35,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from evallib.models import DEFAULT_SAMPLER, MODEL_MATRIX, ModelCallError, generate
+from evallib.models import (
+    DEFAULT_SAMPLER,
+    MODEL_MATRIX,
+    ModelCallError,
+    applied_sampler,
+    generate,
+)
 from evallib.scenarios import Scenario, build_user_prompt, load_all_scenarios
 from evallib.skill_artifacts import system_prompt_for
 
@@ -119,11 +125,7 @@ def run_one(
                 "provider": spec.provider,
                 "condition": condition,
                 "skill_artifact": spec.skill_artifact if condition == "skill" else None,
-                "sampler": {
-                    "temperature": DEFAULT_SAMPLER.temperature,
-                    "top_p": DEFAULT_SAMPLER.top_p,
-                    "max_tokens": DEFAULT_SAMPLER.max_tokens,
-                },
+                "sampler": applied_sampler(spec, DEFAULT_SAMPLER),
                 "generated_at": datetime.now(timezone.utc).isoformat(),
             },
             indent=2,
