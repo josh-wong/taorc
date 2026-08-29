@@ -342,7 +342,12 @@ def summarize_guardrail(scores: dict) -> dict:
     vs. baseline, averaged per model -- PRD M3. A baseline diff of zero
     lines is legitimate data (the baseline condition left the starter file
     untouched), not a missing score, so it's kept rather than treated like
-    a missing diff_lines_vs_starter value."""
+    a missing diff_lines_vs_starter value. When the baseline made no edit
+    but the skill did, the ratio would divide by zero; the denominator is
+    floored at one line so that case still lands in the average -- dropping
+    it let the worst over-editor (skill touches a file baseline left alone)
+    report a better M3 number than a milder one whose baseline edited a
+    line or two."""
     scenarios_by_id = {s.id: s for s in load_all_scenarios()}
     inflation_by_model: dict[str, list[float]] = {}
 
@@ -355,22 +360,17 @@ def summarize_guardrail(scores: dict) -> dict:
             skill = by_condition.get("skill", {}).get("diff_lines_vs_starter")
             if baseline is None or skill is None:
                 continue
-            if baseline == 0:
-                if skill > 0:
-                    # Skill edited a file the baseline left untouched -- exactly
-                    # the over-editing case M3 exists to catch, but the ratio is
-                    # unbounded (division by zero) and can't join the averaged
-                    # percentage below, so flag it instead of silently dropping it.
-                    print(
-                        f"  WARNING {scenario_id}/{model_slot}: baseline made a "
-                        f"zero-line diff but skill made a {skill}-line diff -- "
-                        "unbounded inflation, not included in the percentage below",
-                        file=sys.stderr,
-                    )
-                    continue
-                inflation_by_model.setdefault(model_slot, []).append(0.0)
-                continue
-            inflation_by_model.setdefault(model_slot, []).append((skill - baseline) / baseline)
+            if baseline == 0 and skill > 0:
+                print(
+                    f"  WARNING {scenario_id}/{model_slot}: baseline made a "
+                    f"zero-line diff but skill made a {skill}-line diff -- "
+                    "scoring it against a one-line baseline floor",
+                    file=sys.stderr,
+                )
+            baseline_floor = max(baseline, 1)
+            inflation_by_model.setdefault(model_slot, []).append(
+                (skill - baseline) / baseline_floor
+            )
 
     return {
         model_slot: round(sum(ratios) / len(ratios) * 100, 1)

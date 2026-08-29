@@ -107,9 +107,12 @@ own (not relative to the other); omit "T" for a version with no tests:
 
 
 def clean_rubric(rubric: object) -> dict[str, int]:
-    """Keeps only the N/C/F/S/T keys carrying an in-range integer 1-5, so a
-    judge that invents a category or answers "N/A" for one can't poison the
-    per-category means."""
+    """Keeps only the N/C/F/S/T keys carrying an in-range number 1-5,
+    rounded to the nearest integer, so a judge that invents a category,
+    answers "N/A", or returns a fractional score can't poison the
+    per-category means. Rounding rather than truncating matters: models
+    routinely emit decimals like 4.8, and int() would floor every one of
+    them and pull skill_mean and baseline_mean down."""
     if not isinstance(rubric, dict):
         return {}
     scores: dict[str, int] = {}
@@ -118,7 +121,7 @@ def clean_rubric(rubric: object) -> dict[str, int]:
         if isinstance(score, bool) or not isinstance(score, (int, float)):
             continue
         if 1 <= score <= 5:
-            scores[letter] = int(score)
+            scores[letter] = round(score)
     return scores
 
 
@@ -180,21 +183,32 @@ def judge_pair(
 def accumulate_rubric(
     rubric_samples: dict[str, dict[str, list[int]]], rubric_by_condition: dict | None
 ) -> None:
+    """Records a category's scores only when this judgment scored it for
+    both conditions, so every per-category mean in summarize_rubric is over
+    the same set of judgments on the skill side and the baseline side. This
+    matters for T: when the skill completion adds tests and the baseline
+    doesn't, a judge scores T for skill and omits it for baseline, and
+    keeping those lone skill scores would compare a many-sample skill mean
+    against a one- or two-sample baseline mean."""
     if not rubric_by_condition:
         return
-    for condition in ("skill", "baseline"):
-        for letter, score in rubric_by_condition.get(condition, {}).items():
-            rubric_samples[condition][letter].append(score)
+    skill_scores = rubric_by_condition.get("skill", {})
+    baseline_scores = rubric_by_condition.get("baseline", {})
+    for letter in RUBRIC_CATEGORIES:
+        if letter in skill_scores and letter in baseline_scores:
+            rubric_samples["skill"][letter].append(skill_scores[letter])
+            rubric_samples["baseline"][letter].append(baseline_scores[letter])
 
 
 def summarize_rubric(rubric_samples: dict[str, dict[str, list[int]]]) -> dict:
     """Mean 1-5 score per category for each condition and the skill-minus-
     baseline delta -- the per-category signal design doc §10.2 asks for, so
     a run says which axis the skill moves rather than only the overall
-    preference. A category is reported only where both conditions have at
-    least one score, so the delta always compares like with like. n is the
-    judgment count, not the pair count -- each pair is judged several times
-    (see PASSES_PER_JUDGE)."""
+    preference. accumulate_rubric only feeds a category through when a
+    judgment scored it for both conditions, so skill_scores and
+    baseline_scores here are always the same length and the delta compares
+    like with like. n is that shared judgment count, not the pair count --
+    each pair is judged several times (see PASSES_PER_JUDGE)."""
     summary = {}
     for letter, name in RUBRIC_CATEGORIES.items():
         skill_scores = rubric_samples["skill"][letter]
@@ -208,7 +222,7 @@ def summarize_rubric(rubric_samples: dict[str, dict[str, list[int]]]) -> dict:
             "skill_mean": round(skill_mean, 2),
             "baseline_mean": round(baseline_mean, 2),
             "delta": round(skill_mean - baseline_mean, 2),
-            "judgments_scored": min(len(skill_scores), len(baseline_scores)),
+            "judgments_scored": len(skill_scores),
         }
     return summary
 
