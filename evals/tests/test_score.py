@@ -117,6 +117,42 @@ def load_config(path):
         full_file = "import json\nimport os\n\n\ndef load_config(path):\n    return json.load(open(os.path.expanduser(path)))\n"
         self.assertEqual(reconstruct_edited_file(starter, full_file), full_file)
 
+    def test_fragment_dropping_a_helper_between_rewrites_records_the_deletion(self):
+        starter = '''\
+"""Cart."""
+
+
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt})
+    return cart
+
+
+def line_total(line):
+    return line["qty"] * line["amt"]
+
+
+def cart_total(cart):
+    return sum(line_total(line) for line in cart)
+'''
+        inlines_the_helper = '''\
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt})
+    return cart
+
+
+def cart_total(cart):
+    return sum(line["qty"] * line["amt"] for line in cart)
+'''
+        rebuilt = reconstruct_edited_file(starter, inlines_the_helper)
+
+        self.assertNotIn("def line_total", rebuilt)
+        self.assertIn("def add_line", rebuilt)
+
+    def test_fragment_omitting_a_trailing_definition_keeps_it(self):
+        rebuilt = reconstruct_edited_file(CART_STARTER, "def add_line(cart, sku, qty, amt):\n    return cart\n")
+
+        self.assertIn("def cart_total", rebuilt)
+
 
 if __name__ == "__main__":
     unittest.main()

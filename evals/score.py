@@ -313,6 +313,36 @@ def _has_statements_beyond_definitions(tree: ast.Module) -> bool:
     )
 
 
+def _definitions_removed_by_fragment(
+    starter_defs_in_order: list[tuple[str, tuple[int, int]]],
+    completion_spans: dict[str, tuple[int, int]],
+    completion_code: str,
+) -> set[str]:
+    """Top-level names a fragment completion deleted rather than left alone.
+
+    A fragment says nothing about definitions outside the region it rewrites,
+    so one it simply omits is kept. But a definition that sits between two the
+    fragment does redefine, and that the rewritten code never names, was
+    removed on purpose -- re-inserting it would hide the deletion from M3
+    (#26)."""
+    redefined_indices = [
+        index
+        for index, (name, _) in enumerate(starter_defs_in_order)
+        if name in completion_spans
+    ]
+    if len(redefined_indices) < 2:
+        return set()
+
+    rewritten_region = range(min(redefined_indices), max(redefined_indices) + 1)
+    removed: set[str] = set()
+    for index, (name, _span) in enumerate(starter_defs_in_order):
+        if name in completion_spans or index not in rewritten_region:
+            continue
+        if not re.search(rf"\b{re.escape(name)}\b", completion_code):
+            removed.add(name)
+    return removed
+
+
 def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     """The starter file as this completion would leave it, so M3 measures the
     edit rather than how much unchanged code the model chose to echo.
@@ -320,7 +350,8 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     A completion that returns the whole file is scored as-is. One that returns
     only the changed or added function is applied onto the starter: a top-level
     definition with a matching name replaces the original, a new one is
-    appended, and anything the completion never mentions stays byte-for-byte."""
+    appended, one dropped from inside the rewritten region is deleted, and
+    anything else the completion never mentions stays byte-for-byte."""
     try:
         starter_tree = ast.parse(starter_source)
         completion_tree = ast.parse(completion_code)
@@ -349,10 +380,17 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
         first_line, last_line = span
         return source_lines[first_line - 1 : last_line]
 
+    starter_defs_in_order = sorted(starter_spans.items(), key=lambda item: item[1][0])
+    removed_names = _definitions_removed_by_fragment(
+        starter_defs_in_order, completion_spans, completion_code
+    )
+
     rebuilt: list[str] = []
     next_starter_line = 1
-    for name, span in sorted(starter_spans.items(), key=lambda item: item[1][0]):
-        first_line, last_line = span
+    for name, (first_line, last_line) in starter_defs_in_order:
+        if name in removed_names:
+            next_starter_line = last_line + 1
+            continue
         rebuilt.extend(starter_lines[next_starter_line - 1 : first_line - 1])
         if name in completion_spans:
             rebuilt.extend(lines_in(completion_lines, completion_spans[name]))

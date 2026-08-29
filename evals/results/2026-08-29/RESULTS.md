@@ -246,7 +246,9 @@ is real and is analysed in its section above.
   full-file completion and misfired when a completion returned only the
   changed function. Fixed in `score.py`; this run's `scores.json` and the
   M3 section were regenerated with the fixed scorer (see the correction
-  note in the M3 section).
+  note in the M3 section). A follow-up (#26) taught the reconstruction to
+  detect single-definition starters and fragment deletions; the numbers in
+  this run are unchanged by it.
 - **`max_tokens` changed mid-run** (4000 → 16000). Every stored completion
   is complete, but the two halves were generated under different caps.
 - **Tier-2 trigger spot check** (real Claude Code, 10 prompts) not done.
