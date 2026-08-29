@@ -72,6 +72,59 @@ the open-weights slot — see `evallib/skill_artifacts.py`) change what gets
 written, in the direction the catalog intends. See that module's docstring
 for the reasoning and the limitation.
 
+## Trigger suite (M4)
+
+This is a separate, much cheaper harness from the scenario run above. It
+measures activation — does the skill fire on the tasks it claims and stay
+quiet on the ones it doesn't (`v1-design-doc.md` §10.4, PRD R2.3) — not the
+quality of what gets written.
+
+`triggers.json` holds 100 prompts: 60 the readable-code skill should
+activate on and 40 it must not. The 40 negatives are split the way §10.4
+fixes them — 10 prose-readability (the dangerous half that shares the
+skill's whole vocabulary), 5 code-explanation (reading is not writing), 25
+other. The prompts are written to what the skill actually covers, not to
+the current `description`; the point of the run is to measure the gap so
+the `description` can be tuned against it.
+
+`run_triggers.py` is the tier-1 proxy classifier: for each prompt, one
+classification call given only the skill's `name` and `description`
+(resolved live from `skills/readable-code/SKILL.md` frontmatter, so it
+tracks what ships) — no agent run, no tools. A full pass costs cents and
+finishes in under a minute.
+
+```bash
+export ANTHROPIC_API_KEY=...
+
+python evals/run_triggers.py --out evals/results/2026-08-29 --dry-run  # no key needed
+python evals/run_triggers.py --out evals/results/2026-08-29 --limit 5  # cheap smoke test
+python evals/run_triggers.py --out evals/results/2026-08-29            # full pass
+```
+
+Results land under `<out>/triggers/`, following `run_bench.py`'s layout:
+one `raw/<id>.json` per classified prompt (verdict plus the raw response),
+`raw/<id>.error.json` for a call that failed, and `triggers_summary.json`
+with the headline numbers. Like `run_bench.py`, it resumes — a prompt
+already on disk is kept, not re-billed — and takes `--force` to
+re-classify. `--model` picks the classifier slot (default `claude`, the
+skill's primary harness).
+
+`triggers_summary.json` reports the activation rate on the 60 positives and
+the false-fire rate on the 40 negatives against M4 (≥90% activation, ≤10%
+false fire), plus `positives_not_activated` and `negatives_activated` so a
+miscalibrated `description` points straight at the prompts that moved.
+`evallib/triggers.py` refuses to load a suite that has drifted off the
+60/40/10-5-25 shape — `scripts/validate.py` runs that same check in CI.
+
+Tier 2 (a 10-prompt end-to-end spot check in real Claude Code, confirming
+the proxy tracks reality) is a manual step recorded alongside the run it
+validates, not automated here.
+
+This run is not wired into any per-PR workflow: it needs an API key, and a
+docs-only commit must not spend one or block on a provider outage (§10.4).
+Run it on demand and whenever `SKILL.md` frontmatter or `catalog/rules.yaml`
+changes.
+
 ## Publishing
 
 Every metric goes in `RESULTS.md`, including ones that miss their target —

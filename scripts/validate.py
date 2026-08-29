@@ -608,6 +608,28 @@ def check_skill_spec(version: str) -> list[str]:
     return errors
 
 
+def check_trigger_suite() -> list[str]:
+    """The M4 trigger suite (evals/triggers.json, §10.4) is a measurement
+    instrument with a fixed shape: 60 positive / 40 negative, negatives split
+    10 prose-readability / 5 code-explanation / 25 other. evallib.triggers
+    enforces that shape; a suite that has drifted off it can no longer
+    resolve M4's ±7pp / 2.5pp targets, so run_triggers.py would score M4 from
+    a sample that cannot support the claim. Skipped until the suite exists."""
+    triggers_path = REPO_ROOT / "evals" / "triggers.json"
+    if not triggers_path.exists():
+        return []
+    sys.path.insert(0, str(REPO_ROOT / "evals"))
+    try:
+        from evallib.triggers import TriggerSuiteError, load_suite
+    except ImportError as error:
+        return [f"evals/triggers.json exists but evallib.triggers will not import: {error}"]
+    try:
+        load_suite()
+    except TriggerSuiteError as error:
+        return [str(error)]
+    return []
+
+
 def check_github_skills_copy_sync() -> list[str]:
     """build.py's sync_github_skills_copy() copies skills/readable-code to
     .github/skills/readable-code (Copilot reads only the latter) but nothing
@@ -676,6 +698,7 @@ def main() -> int:
         all_errors += check_lint_language_extension_sync()
 
     all_errors += check_skill_spec(version)
+    all_errors += check_trigger_suite()
     all_errors += check_github_skills_copy_sync()
     all_errors += check_budgets(version)
     all_errors += check_version_sync(version)
