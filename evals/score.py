@@ -29,6 +29,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import tokenize
 from io import StringIO
 from pathlib import Path
@@ -225,25 +226,30 @@ def empty_word_count(code: str) -> int:
     )
 
 
-def run_lint(code: str, suffix: str) -> list[dict] | None:
+def run_lint(code: str, file_extension: str) -> list[dict] | None:
     """Returns None (not scored) rather than raising on any lint-subprocess
     failure -- one pathological completion should drop that one score, not
-    crash the whole run and lose every score already computed."""
+    crash the whole run and lose every score already computed.
+
+    The completion goes to a private temp dir, not a fixed path under
+    evals/: every Python scenario shares one extension, so two score.py
+    runs (scoring two run dirs at once) would clobber each other's scratch
+    file mid-lint, and a hard kill would strand model-generated code at a
+    path the CI lint job scans."""
     if not LINT_SCRIPT.exists():
         return None
-    scratch = EVALS_ROOT / f"_score_scratch{suffix}"
-    scratch.write_text(code, encoding="utf-8")
-    try:
-        completed = subprocess.run(
-            [sys.executable, str(LINT_SCRIPT), str(scratch), "--format", "json"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except subprocess.TimeoutExpired:
-        return None
-    finally:
-        scratch.unlink(missing_ok=True)
+    with tempfile.TemporaryDirectory() as scratch_dir:
+        scratch = Path(scratch_dir) / f"completion{file_extension}"
+        scratch.write_text(code, encoding="utf-8")
+        try:
+            completed = subprocess.run(
+                [sys.executable, str(LINT_SCRIPT), str(scratch), "--format", "json"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            return None
     if not completed.stdout.strip():
         return None
     try:
@@ -264,9 +270,9 @@ def diff_line_count(before: str, after: str) -> int:
 def score_completion(scenario: Scenario, completion_path: Path) -> dict:
     completion_text = completion_path.read_text(encoding="utf-8")
     code = extract_code(completion_text)
-    suffix = Path(scenario.output_file).suffix
+    file_extension = Path(scenario.output_file).suffix
     loc = count_loc(code)
-    findings = run_lint(code, suffix)
+    findings = run_lint(code, file_extension)
     max_depth, mean_depth = nesting_depth(code)
 
     findings_per_100_loc = None
