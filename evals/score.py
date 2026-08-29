@@ -55,7 +55,9 @@ _N1_RULE_PATH = _LINT_RULES_ROOT / "python" / "taorc-n1-empty-word-identifier.ym
 
 def load_empty_word_pattern() -> re.Pattern:
     text = _N1_RULE_PATH.read_text(encoding="utf-8")
-    match = re.search(r"regex:\s*'\^\(([^)]+)\)\$'", text)
+    # Greedy `.+` so an alternation that itself contains a parenthesised
+    # group is captured whole, not truncated at its first ')'.
+    match = re.search(r"regex:\s*'\^\((.+)\)\$'", text)
     if not match:
         raise ValueError(f"could not find N1's word-list regex in {_N1_RULE_PATH}")
     return re.compile(rf"\b({match.group(1)})\b")
@@ -267,6 +269,18 @@ def diff_line_count(before: str, after: str) -> int:
     )
 
 
+def _starter_for_output_file(scenario: Scenario) -> str | None:
+    """The starter the completion is meant to edit -- the one whose basename
+    matches output_file. `next(iter(starter_files))` would compare the model
+    output against an unrelated starter on any multi-starter scenario, making
+    the M3 diff-inflation number meaningless."""
+    output_name = Path(scenario.output_file).name
+    for relative_path, content in scenario.starter_files.items():
+        if Path(relative_path).name == output_name:
+            return content
+    return None
+
+
 def score_completion(scenario: Scenario, completion_path: Path) -> dict:
     completion_text = completion_path.read_text(encoding="utf-8")
     code = extract_code(completion_text)
@@ -290,16 +304,17 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
         "empty_word_identifier_count": empty_word_count(code),
     }
 
-    if scenario.measure_diff_size and scenario.starter_files:
-        starter_path = next(iter(scenario.starter_files))
-        before = scenario.starter_files[starter_path]
-        metrics["diff_lines_vs_starter"] = diff_line_count(before, code)
-    elif scenario.measure_diff_size:
-        print(
-            f"  WARNING {scenario.id}: measure_diff_size is set but starter_files is "
-            "empty -- skipping diff_lines_vs_starter for this completion",
-            file=sys.stderr,
-        )
+    if scenario.measure_diff_size:
+        starter_before = _starter_for_output_file(scenario)
+        if starter_before is None:
+            print(
+                f"  WARNING {scenario.id}: measure_diff_size is set but no starter "
+                f"file matches output_file {scenario.output_file!r} -- skipping "
+                "diff_lines_vs_starter for this completion",
+                file=sys.stderr,
+            )
+        else:
+            metrics["diff_lines_vs_starter"] = diff_line_count(starter_before, code)
 
     return metrics
 

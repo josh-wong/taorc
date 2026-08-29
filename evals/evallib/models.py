@@ -74,7 +74,14 @@ class SamplerSettings:
 
 # Code generation wants low-variance sampling: two runs of the same
 # scenario/model/condition should be comparable, not a coin flip on style.
-DEFAULT_SAMPLER = SamplerSettings(temperature=0.2, top_p=1.0, max_tokens=2000)
+#
+# max_tokens is a hard cliff, not a soft budget: a completion that hits it
+# is rejected as truncated and recorded as a durable generation failure that
+# re-fails identically on every rerun. 4000 tokens (~500 lines) clears the
+# longest legitimate answer any scenario here asks for -- a test module or a
+# de-slopped file -- so a real cut-off signals a runaway model, not a cap
+# set too low.
+DEFAULT_SAMPLER = SamplerSettings(temperature=0.2, top_p=1.0, max_tokens=4000)
 
 
 @dataclass(frozen=True)
