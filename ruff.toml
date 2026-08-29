@@ -22,7 +22,19 @@ line-length = 100
 # code that deliberately violates a rule so taorc-lint can be asserted against
 # it, which is precisely what ruff would report. extend-exclude, not exclude,
 # so ruff's own defaults stay in place.
-extend-exclude = ["lint/fixtures"]
+#
+# The same reasoning applies to two eval scenario starter files
+# (evals/scenarios/07-refactor-nesting, .../10-de-slop): the scenario is
+# specifically about cleaning up nesting and AI-code-tell violations, so the
+# starter file must contain them for the scenario to test anything.
+extend-exclude = [
+  "lint/fixtures",
+  "evals/scenarios/07-refactor-nesting/starter",
+  "evals/scenarios/10-de-slop/starter",
+  # Generated model output, not hand-written source -- linting it would mean
+  # this file's own rules change depending on what a model happened to write.
+  "evals/results",
+]
 
 [lint]
 select = [

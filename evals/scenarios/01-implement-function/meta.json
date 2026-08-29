@@ -1,0 +1,10 @@
+{
+  "id": "01-implement-function",
+  "title": "Implement a function from a spec",
+  "mode": "write",
+  "language": "python",
+  "probes": ["N", "C"],
+  "starter_files": [],
+  "output_file": "shipping.py",
+  "measure_diff_size": false
+}

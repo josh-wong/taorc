@@ -1,0 +1,413 @@
+#!/usr/bin/env python3
+"""LLM-judge scoring track (design doc §10.2, PRD M2).
+
+For every scenario/model pair, asks the two other matrix models to blindly
+compare the baseline and skill-enabled completions on one question -- "which
+would take a new reader less time to understand" -- with left/right order
+randomized so position can't leak which condition is which, plus a 1-5 score
+for each version on every catalog category (N/C/F/S/T). Each judge runs
+PASSES_PER_JUDGE times, for ~120 judge calls per full run (design doc
+§10.3). Every raw judgment is written to evals/results/<run>/judgments/ so a
+published number can be traced back to the exact prompt and response that
+produced it (R7.4); the preference counts and the per-category
+skill-vs-baseline delta are aggregated into judge_summary.json.
+
+The judge model is never the same model that generated the pair (§10.2), to
+reduce self-preference bias -- see judge_models_for() below.
+
+A judgment already saved under judgments/ is reused, not re-billed, so an
+interrupted judging pass resumes by being re-invoked (pass --force to redo).
+
+    python evals/judge.py --run evals/results/2026-08-28
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import random
+import re
+import sys
+from pathlib import Path
+
+EVALS_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(EVALS_ROOT))
+from evallib.models import (  # noqa: E402
+    DEFAULT_SAMPLER,
+    MODEL_MATRIX,
+    ModelCallError,
+    ModelSpec,
+    generate,
+)
+from evallib.scenarios import load_all_scenarios  # noqa: E402
+from run_bench import output_extension  # noqa: E402
+from score import extract_code  # noqa: E402
+
+JUDGE_SYSTEM_PROMPT = (
+    "You are judging two versions of the same piece of code for one thing "
+    "only: which would take a new reader less time to understand. Ignore "
+    "correctness bugs unless they'd confuse a reader; ignore your own style "
+    "preferences. Respond with a single JSON object and nothing else."
+)
+
+RUBRIC_CATEGORIES = {
+    "N": "naming",
+    "C": "comments",
+    "F": "control flow and structure",
+    "S": "structure and decomposition",
+    "T": "test quality (if tests are present, otherwise omit)",
+}
+
+
+# Every pair is judged by each of the other two matrix models, twice each:
+# 10 scenarios x 3 generators x 2 judges x 2 passes = ~120 judge calls, the
+# design doc §10.3 budget. Judging with both other models (rather than one
+# at random) removes the coin-flip assignment that let a single noisy
+# verdict swing M2; the repeat pass smooths within-judge variance.
+PASSES_PER_JUDGE = 2
+
+
+def judge_models_for(generation_model_slot: str) -> list[ModelSpec]:
+    """Every matrix slot except the one that generated the pair, so no
+    model ever judges its own output (design doc §10.2) and self-preference
+    bias can't concentrate on whichever model is first in MODEL_MATRIX."""
+    other_models = [spec for spec in MODEL_MATRIX if spec.slot != generation_model_slot]
+    if not other_models:
+        raise ValueError("MODEL_MATRIX needs at least two models for judging")
+    return other_models
+
+
+def ab_order_is_skill_first(
+    seed: int | None,
+    scenario_id: str,
+    generation_slot: str,
+    judge_slot: str,
+    judging_pass: int,
+) -> bool:
+    """Whether the skill completion is shown as version A for one judgment.
+    With --seed set, this is a deterministic function of the judgment's
+    identity, not a draw from one shared RNG stream: a re-run -- or a
+    resume over a half-written judgments/ dir, where the already-saved
+    judgments never draw -- reproduces the same A/B layout for every pair
+    regardless of which ones were done first. With no seed it's a fresh
+    coin flip per judgment."""
+    if seed is None:
+        return random.random() < 0.5
+    identity = f"{seed}|{scenario_id}|{generation_slot}|{judge_slot}|{judging_pass}"
+    return random.Random(identity).random() < 0.5
+
+
+def build_judge_prompt(task_title: str, version_a: str, version_b: str) -> str:
+    rubric_lines = "\n".join(
+        f'    "{letter}": <1-5 score for {name}>' for letter, name in RUBRIC_CATEGORIES.items()
+    )
+    return f"""Task the code was written for: {task_title}
+
+Version A:
+```
+{version_a}
+```
+
+Version B:
+```
+{version_b}
+```
+
+Return exactly this JSON shape. Score each version 1-5 per category on its
+own (not relative to the other); omit "T" for a version with no tests:
+{{
+  "preference": "A" or "B",
+  "rubric_a": {{
+{rubric_lines}
+  }},
+  "rubric_b": {{
+{rubric_lines}
+  }}
+}}"""
+
+
+def clean_rubric(rubric: object) -> dict[str, int]:
+    """Keeps only the N/C/F/S/T keys carrying an in-range number 1-5,
+    rounded to the nearest integer, so a judge that invents a category,
+    answers "N/A", or returns a fractional score can't poison the
+    per-category means. Rounding rather than truncating matters: models
+    routinely emit decimals like 4.8, and int() would floor every one of
+    them and pull skill_mean and baseline_mean down."""
+    if not isinstance(rubric, dict):
+        return {}
+    scores: dict[str, int] = {}
+    for letter in RUBRIC_CATEGORIES:
+        score = rubric.get(letter)
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            continue
+        if 1 <= score <= 5:
+            scores[letter] = round(score)
+    return scores
+
+
+def parse_judge_response(text: str) -> dict | None:
+    """A greedy `\\{.*\\}` regex would span from a stray brace in the judge's
+    own reasoning prose to the response's final `}`, producing invalid JSON
+    and silently losing a real verdict. Instead, try decoding a JSON object
+    starting at each `{` in turn and keep the first one that actually has
+    the "preference" key the answer is supposed to carry."""
+    decoder = json.JSONDecoder()
+    for opening_brace in re.finditer(r"\{", text):
+        try:
+            parsed, _ = decoder.raw_decode(text, opening_brace.start())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and "preference" in parsed:
+            return parsed
+    return None
+
+
+def judge_pair(
+    scenario_title: str,
+    baseline_code: str,
+    skill_code: str,
+    judge_spec: ModelSpec,
+    skill_is_a: bool,
+) -> dict:
+    """Shows the skill completion as version A or B per skill_is_a (chosen
+    by the caller, see ab_order_is_skill_first) so the judge can't infer
+    the condition from position, then translates the raw A/B answer back to
+    baseline/skill before returning it."""
+    version_a = skill_code if skill_is_a else baseline_code
+    version_b = baseline_code if skill_is_a else skill_code
+
+    prompt = build_judge_prompt(scenario_title, version_a, version_b)
+    raw_response = generate(judge_spec, JUDGE_SYSTEM_PROMPT, prompt, DEFAULT_SAMPLER)
+    parsed = parse_judge_response(raw_response)
+
+    preferred_condition = None
+    rubric_by_condition = None
+    if parsed:
+        if parsed.get("preference") in ("A", "B"):
+            preferred_is_a = parsed["preference"] == "A"
+            preferred_condition = "skill" if (preferred_is_a == skill_is_a) else "baseline"
+        rubric_a = clean_rubric(parsed.get("rubric_a"))
+        rubric_b = clean_rubric(parsed.get("rubric_b"))
+        if rubric_a or rubric_b:
+            rubric_by_condition = {
+                "skill": rubric_a if skill_is_a else rubric_b,
+                "baseline": rubric_b if skill_is_a else rubric_a,
+            }
+
+    return {
+        "judge_model_id": judge_spec.model_id,
+        "skill_labeled": "A" if skill_is_a else "B",
+        "raw_response": raw_response,
+        "parsed": parsed,
+        "preferred_condition": preferred_condition,
+        "rubric_by_condition": rubric_by_condition,
+    }
+
+
+def accumulate_rubric(
+    rubric_samples: dict[str, dict[str, list[int]]], rubric_by_condition: dict | None
+) -> None:
+    """Records a category's scores only when this judgment scored it for
+    both conditions, so every per-category mean in summarize_rubric is over
+    the same set of judgments on the skill side and the baseline side. This
+    matters for T: when the skill completion adds tests and the baseline
+    doesn't, a judge scores T for skill and omits it for baseline, and
+    keeping those lone skill scores would compare a many-sample skill mean
+    against a one- or two-sample baseline mean."""
+    if not rubric_by_condition:
+        return
+    skill_scores = rubric_by_condition.get("skill", {})
+    baseline_scores = rubric_by_condition.get("baseline", {})
+    for letter in RUBRIC_CATEGORIES:
+        if letter in skill_scores and letter in baseline_scores:
+            rubric_samples["skill"][letter].append(skill_scores[letter])
+            rubric_samples["baseline"][letter].append(baseline_scores[letter])
+
+
+def summarize_rubric(rubric_samples: dict[str, dict[str, list[int]]]) -> dict:
+    """Mean 1-5 score per category for each condition and the skill-minus-
+    baseline delta -- the per-category signal design doc §10.2 asks for, so
+    a run says which axis the skill moves rather than only the overall
+    preference. accumulate_rubric only feeds a category through when a
+    judgment scored it for both conditions, so skill_scores and
+    baseline_scores here are always the same length and the delta compares
+    like with like. n is that shared judgment count, not the pair count --
+    each pair is judged several times (see PASSES_PER_JUDGE)."""
+    summary = {}
+    for letter, name in RUBRIC_CATEGORIES.items():
+        skill_scores = rubric_samples["skill"][letter]
+        baseline_scores = rubric_samples["baseline"][letter]
+        if not skill_scores or not baseline_scores:
+            continue
+        skill_mean = sum(skill_scores) / len(skill_scores)
+        baseline_mean = sum(baseline_scores) / len(baseline_scores)
+        summary[letter] = {
+            "category": name,
+            "skill_mean": round(skill_mean, 2),
+            "baseline_mean": round(baseline_mean, 2),
+            "delta": round(skill_mean - baseline_mean, 2),
+            "judgments_scored": len(skill_scores),
+        }
+    return summary
+
+
+def load_saved_judgment(path: Path) -> dict | None:
+    """A judgment file written by an earlier run, or None if it's absent or
+    unreadable -- a corrupt file just means that one judgment gets re-run."""
+    if not path.exists():
+        return None
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return saved if isinstance(saved, dict) and "preferred_condition" in saved else None
+
+
+def judge_pair_repeatedly(
+    scenario_id: str,
+    scenario_title: str,
+    generation_slot: str,
+    baseline_code: str,
+    skill_code: str,
+    judgments_dir: Path,
+    force: bool,
+    seed: int | None,
+) -> list[dict]:
+    """Runs every non-generating matrix model over one baseline/skill pair
+    PASSES_PER_JUDGE times, writes each raw judgment to its own file, and
+    returns them all. A judgment already on disk is reused rather than
+    re-billed (pass force to redo it); a judge whose call fails is skipped
+    with a stderr line and the remaining passes still count."""
+    judgments: list[dict] = []
+    for judge_spec in judge_models_for(generation_slot):
+        for judging_pass in range(1, PASSES_PER_JUDGE + 1):
+            label = (
+                f"{scenario_id} / {generation_slot} / "
+                f"judge={judge_spec.slot} pass {judging_pass}"
+            )
+            out_path = judgments_dir / (
+                f"{scenario_id}__{generation_slot}__judge-{judge_spec.slot}__pass{judging_pass}.json"
+            )
+
+            saved = None if force else load_saved_judgment(out_path)
+            if saved is not None:
+                print(f"  {label}: reusing saved judgment")
+                judgments.append(saved)
+                continue
+
+            skill_is_a = ab_order_is_skill_first(
+                seed, scenario_id, generation_slot, judge_spec.slot, judging_pass
+            )
+            try:
+                judgment = judge_pair(
+                    scenario_title, baseline_code, skill_code, judge_spec, skill_is_a
+                )
+            except ModelCallError as error:
+                print(f"  SKIPPED {label}: {error}", file=sys.stderr)
+                continue
+
+            out_path.write_text(json.dumps(judgment, indent=2), encoding="utf-8")
+            print(f"  {label}: preferred {judgment['preferred_condition'] or 'no_verdict'}")
+            judgments.append(judgment)
+    return judgments
+
+
+def run_judging(run_dir: Path, force: bool, seed: int | None) -> dict:
+    scenarios_by_id = {s.id: s for s in load_all_scenarios()}
+    judgments_dir = run_dir / "judgments"
+    judgments_dir.mkdir(parents=True, exist_ok=True)
+
+    preference_counts = {"skill": 0, "baseline": 0, "no_verdict": 0}
+    rubric_samples: dict[str, dict[str, list[int]]] = {
+        "skill": {letter: [] for letter in RUBRIC_CATEGORIES},
+        "baseline": {letter: [] for letter in RUBRIC_CATEGORIES},
+    }
+    raw_dir = run_dir / "raw"
+
+    for scenario_dir in sorted(raw_dir.iterdir()):
+        scenario = scenarios_by_id.get(scenario_dir.name)
+        if scenario is None:
+            continue
+        for model_dir in sorted(scenario_dir.iterdir()):
+            completion_ext = output_extension(scenario)
+            baseline_path = model_dir / f"baseline{completion_ext}"
+            skill_path = model_dir / f"skill{completion_ext}"
+            if not (baseline_path.exists() and skill_path.exists()):
+                continue
+
+            baseline_code = extract_code(baseline_path.read_text(encoding="utf-8"))
+            skill_code = extract_code(skill_path.read_text(encoding="utf-8"))
+
+            judgments = judge_pair_repeatedly(
+                scenario.id,
+                scenario.title,
+                model_dir.name,
+                baseline_code,
+                skill_code,
+                judgments_dir,
+                force,
+                seed,
+            )
+            for judgment in judgments:
+                verdict = judgment["preferred_condition"] or "no_verdict"
+                preference_counts[verdict] += 1
+                accumulate_rubric(rubric_samples, judgment["rubric_by_condition"])
+
+    return {
+        "preference_counts": preference_counts,
+        "rubric_means": summarize_rubric(rubric_samples),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--run", required=True, help="a run directory produced by run_bench.py")
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="seed for A/B order randomization; makes a from-scratch run and "
+        "a resume over the same run's saved judgments produce the same A/B "
+        "layout for every pair",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="re-run judgments that are already saved (default: reuse them, so an "
+        "interrupted judging pass resumes without re-billing)",
+    )
+    args = parser.parse_args()
+
+    run_dir = Path(args.run)
+    if not (run_dir / "raw").is_dir():
+        parser.error(f"{run_dir} has no raw/ directory -- run run_bench.py first")
+
+    outcome = run_judging(run_dir, args.force, args.seed)
+    counts = outcome["preference_counts"]
+    rubric_means = outcome["rubric_means"]
+
+    summary_path = run_dir / "judge_summary.json"
+    summary_path.write_text(json.dumps(outcome, indent=2), encoding="utf-8")
+    print(f"wrote {summary_path}")
+
+    decided = counts["skill"] + counts["baseline"]
+    if decided:
+        skill_preference_pct = round(counts["skill"] / decided * 100, 1)
+        print(
+            f"skill preferred in {skill_preference_pct}% of {decided} decided "
+            "judgments (M2 target >= 70%)"
+        )
+    print(f"counts: {counts}")
+    for letter, means in rubric_means.items():
+        print(
+            f"  rubric {letter} ({means['category']}): skill {means['skill_mean']} vs "
+            f"baseline {means['baseline_mean']} (delta {means['delta']:+g}, "
+            f"n={means['judgments_scored']})"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

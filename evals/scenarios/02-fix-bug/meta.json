@@ -1,0 +1,10 @@
+{
+  "id": "02-fix-bug",
+  "title": "Fix a bug in existing code",
+  "mode": "review-then-write",
+  "language": "python",
+  "probes": ["X1"],
+  "starter_files": ["starter/inventory.py"],
+  "output_file": "inventory.py",
+  "measure_diff_size": true
+}

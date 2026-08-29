@@ -6,7 +6,7 @@ Agents optimize for producing something that satisfies a request and passes revi
 
 ## Status
 
-This repository is in early development. The [product requirements doc](v1-product-requirements-doc.md) and [design doc](v1-design-doc.md) are approved and describe the full v1 scope: an 85-rule catalog, a hand-written skill package, generated adapters for around ten agent harnesses, a stdlib-only linter (`taorc-lint`), and a published cross-model eval suite. The catalog, the skill package, the linter, and the generated adapters and installers are complete; the eval suite and the v1.0.0 release have not shipped yet, so the benchmark numbers referenced in the design doc are not published here yet.
+This repository is in early development. The [product requirements doc](v1-product-requirements-doc.md) and [design doc](v1-design-doc.md) are approved and describe the full v1 scope: an 85-rule catalog, a hand-written skill package, generated adapters for around ten agent harnesses, a stdlib-only linter (`taorc-lint`), and a published cross-model eval suite. The catalog, the skill package, the linter, the generated adapters and installers, and the eval harness (see [`evals/`](evals/)) are complete; the first published baseline run and the v1.0.0 release have not shipped yet, so the benchmark numbers referenced in the design doc are not published here yet.
 
 ## Install
 

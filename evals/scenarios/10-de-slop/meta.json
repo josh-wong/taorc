@@ -1,0 +1,10 @@
+{
+  "id": "10-de-slop",
+  "title": "De-slop an AI-written file",
+  "mode": "refactor",
+  "language": "python",
+  "probes": ["ai-code-tells"],
+  "starter_files": ["starter/report.py"],
+  "output_file": "report.py",
+  "measure_diff_size": false
+}

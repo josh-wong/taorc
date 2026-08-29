@@ -1,0 +1,10 @@
+{
+  "id": "05-parse-transform",
+  "title": "Parse and transform a data file",
+  "mode": "write",
+  "language": "python",
+  "probes": ["N", "V", "S"],
+  "starter_files": [],
+  "output_file": "attendance.py",
+  "measure_diff_size": false
+}
