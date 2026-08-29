@@ -404,7 +404,7 @@ def _rebuild_class_with_method_edits(
 def _definitions_removed_by_fragment(
     starter_defs_in_order: list[tuple[str, tuple[int, int]]],
     completion_spans: dict[str, tuple[int, int]],
-    completion_code: str,
+    names_referenced_by_completion: set[str],
 ) -> set[str]:
     """Top-level names a fragment completion deleted rather than left alone.
 
@@ -412,7 +412,8 @@ def _definitions_removed_by_fragment(
     so one it simply omits is kept. But a definition that sits between two the
     fragment does redefine, and that the rewritten code never names, was
     removed on purpose -- re-inserting it would hide the deletion from M3
-    (#26)."""
+    (#26). "Never names" is an AST check: a matching substring in a string
+    literal or a comment (`# inlined line_total`) does not count as a use."""
     redefined_indices = [
         index
         for index, (name, _) in enumerate(starter_defs_in_order)
@@ -426,9 +427,22 @@ def _definitions_removed_by_fragment(
     for index, (name, _span) in enumerate(starter_defs_in_order):
         if name in completion_spans or index not in rewritten_region:
             continue
-        if not re.search(rf"\b{re.escape(name)}\b", completion_code):
+        if name not in names_referenced_by_completion:
             removed.add(name)
     return removed
+
+
+def _names_referenced(tree: ast.Module) -> set[str]:
+    """Every identifier the code actually reads or writes -- `ast.Name` loads
+    and stores plus attribute accesses -- so a name that appears only inside a
+    string or comment is not mistaken for a live reference."""
+    referenced: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            referenced.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            referenced.add(node.attr)
+    return referenced
 
 
 def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
@@ -472,12 +486,18 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     # alone misreads it as a fragment and splices the stale definition back
     # (#26). Reproducing the starter's entire prologue -- its docstring and
     # imports -- is the signal that the model returned the whole file anyway; a
-    # bare fragment carries none of it.
-    completion_is_full_file = completion_keeps_starter_prologue or (
-        completion_redefines_every_name
-        and (
-            not starter_prologue
-            or completion_echoes_unchanged_definition
+    # bare fragment carries none of it. Redefining every one of two or more
+    # starter definitions is the same signal even when the prologue was
+    # deliberately dropped: a fragment does not rewrite the whole file.
+    completion_rewrites_every_definition = (
+        len(starter_spans) >= 2 and completion_redefines_every_name
+    )
+    completion_is_full_file = (
+        completion_keeps_starter_prologue
+        or completion_rewrites_every_definition
+        or (
+            completion_redefines_every_name
+            and (not starter_prologue or completion_echoes_unchanged_definition)
         )
     )
     if not completion_spans or completion_is_full_file:
@@ -485,7 +505,7 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
 
     starter_defs_in_order = sorted(starter_spans.items(), key=lambda item: item[1][0])
     removed_names = _definitions_removed_by_fragment(
-        starter_defs_in_order, completion_spans, completion_code
+        starter_defs_in_order, completion_spans, _names_referenced(completion_tree)
     )
 
     # A completion def that names no top-level starter definition but exactly

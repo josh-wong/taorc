@@ -253,6 +253,58 @@ def total_cents(cart):
         self.assertEqual(rebuilt, rewrite_renaming_total)
         self.assertNotIn("def cart_total", rebuilt)
 
+    def test_inlined_helper_named_only_in_a_comment_is_still_recorded_as_removed(self):
+        """A fragment that inlines a helper and mentions it in a comment has
+        still deleted it -- a substring match in the comment must not keep the
+        dead function spliced back in."""
+        starter = '''\
+"""Cart."""
+
+
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt})
+    return cart
+
+
+def line_total(line):
+    return line["qty"] * line["amt"]
+
+
+def cart_total(cart):
+    return sum(line_total(line) for line in cart)
+'''
+        inlines_with_a_comment = '''\
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt})
+    return cart
+
+
+def cart_total(cart):
+    # inlined line_total for readability
+    return sum(line["qty"] * line["amt"] for line in cart)
+'''
+        rebuilt = reconstruct_edited_file(starter, inlines_with_a_comment)
+
+        self.assertNotIn("def line_total", rebuilt)
+
+    def test_whole_file_rewrite_of_every_function_that_drops_the_docstring_keeps_the_deletion(self):
+        """The completion rewrites the body of every starter function -- so no
+        definition is echoed verbatim -- and omits the module docstring. It is
+        still a whole-file answer, and the dropped docstring must reach M3."""
+        rewrite_editing_every_function = '''\
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt, "note": ""})
+    return cart
+
+
+def cart_total(cart):
+    return sum(line["qty"] * line["amt"] for line in cart if line["qty"] > 0)
+'''
+        rebuilt = reconstruct_edited_file(CART_STARTER, rewrite_editing_every_function)
+
+        self.assertEqual(rebuilt, rewrite_editing_every_function)
+        self.assertNotIn("Shopping cart", rebuilt)
+
 
 if __name__ == "__main__":
     unittest.main()
