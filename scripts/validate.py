@@ -58,6 +58,11 @@ from lib import (
     read_version,
 )
 
+# evallib.triggers owns the M4 trigger-suite shape checks (check_trigger_suite)
+# and the SKILL.md frontmatter slicing check_skill_spec reuses. Put evals/ on
+# the path once here so both can import it.
+sys.path.insert(0, str(REPO_ROOT / "evals"))
+
 # templates/agent-block.md's budget is imported from build.py rather than
 # duplicated here, so the two scripts can't drift onto different limits.
 BUDGETS = {
@@ -516,15 +521,18 @@ def _parse_frontmatter(text: str) -> dict | None:
 
     Malformed YAML returns None rather than propagating: this gate's job is to
     report what is wrong with the file, and a traceback out of here would take
-    down the checks that run after it as well.
+    down the checks that run after it as well. The ``---`` fence slicing is
+    evallib.triggers.frontmatter_block so SKILL.md's frontmatter is cut one
+    way, not two; only the byte offsets are shared -- that copy raises where
+    this returns None.
     """
-    if not text.startswith("---\n"):
-        return None
-    end = text.find("\n---\n", 3)
-    if end == -1:
+    from evallib.triggers import frontmatter_block
+
+    block = frontmatter_block(text)
+    if block is None:
         return None
     try:
-        parsed = yaml.safe_load(text[4 : end + 1])
+        parsed = yaml.safe_load(block)
     except yaml.YAMLError:
         return None
     return parsed if isinstance(parsed, dict) else None
@@ -608,6 +616,27 @@ def check_skill_spec(version: str) -> list[str]:
     return errors
 
 
+def check_trigger_suite() -> list[str]:
+    """The M4 trigger suite (evals/triggers.json, §10.4) is a measurement
+    instrument with a fixed shape: 60 positive / 40 negative, negatives split
+    10 prose-readability / 5 code-explanation / 25 other. evallib.triggers
+    enforces that shape; a suite that has drifted off it can no longer
+    resolve M4's ±7pp / 2.5pp targets, so run_triggers.py would score M4 from
+    a sample that cannot support the claim. Skipped until the suite exists."""
+    triggers_path = REPO_ROOT / "evals" / "triggers.json"
+    if not triggers_path.exists():
+        return []
+    try:
+        from evallib.triggers import TriggerSuiteError, load_suite
+    except ImportError as error:
+        return [f"evals/triggers.json exists but evallib.triggers will not import: {error}"]
+    try:
+        load_suite()
+    except TriggerSuiteError as error:
+        return [str(error)]
+    return []
+
+
 def check_github_skills_copy_sync() -> list[str]:
     """build.py's sync_github_skills_copy() copies skills/readable-code to
     .github/skills/readable-code (Copilot reads only the latter) but nothing
@@ -676,6 +705,7 @@ def main() -> int:
         all_errors += check_lint_language_extension_sync()
 
     all_errors += check_skill_spec(version)
+    all_errors += check_trigger_suite()
     all_errors += check_github_skills_copy_sync()
     all_errors += check_budgets(version)
     all_errors += check_version_sync(version)

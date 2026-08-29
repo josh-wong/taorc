@@ -1,0 +1,485 @@
+#!/usr/bin/env python3
+"""Tier-1 trigger classifier for M4 (v1-design-doc.md §10.4, PRD R2.3).
+
+For each of the 100 prompts in ``evals/triggers.json``, makes one cheap
+classification call: given only the skill's ``name`` and ``description``
+(resolved live from ``skills/readable-code/SKILL.md`` so it tracks what
+ships), would the readable-code skill activate for this request? No agent
+run, no tools -- that is what makes a full pass cost cents and finish in
+under a minute, so the ``description`` can be iterated dozens of times
+against it (§10.4). Tier 2, the 10-prompt end-to-end check in real Claude
+Code, is a manual step recorded elsewhere, not this script.
+
+    python evals/run_triggers.py --out evals/results/2026-08-29
+    python evals/run_triggers.py --out evals/results/2026-08-29 --dry-run
+    python evals/run_triggers.py --out evals/results/2026-08-29 --limit 6
+
+Results land under ``<out>/triggers/`` following run_bench.py's layout: one
+``raw/<id>.json`` per classified prompt, ``raw/<id>.error.json`` for a call
+that failed, and ``triggers_summary.json`` with the activation rate on the
+60 positives and the false-fire rate on the 40 negatives, scored against M4
+(≥90% activation, ≤10% false fire).
+
+``meets_m4`` is ``true`` only when the whole suite classified: a run with
+any failed cell, or one narrowed by ``--limit``, reports ``meets_m4: false``
+whatever the partial rates say and exits non-zero, so a shrunken sample
+can't be mistaken for a passing verdict. A ``--limit`` run writes its summary
+to ``triggers_summary.partial.json`` so it never overwrites a full pass's
+``triggers_summary.json`` in the same ``--out``.
+
+Like run_bench.py, this resumes: a prompt already classified on disk is
+kept, not re-billed, so an interrupted pass finishes by being re-invoked
+with the same ``--out`` (pass ``--force`` to re-classify). It needs one API
+key -- the classifier model's (``--model``, default the ``claude`` slot). A
+docs-only commit must not spend one: nothing runs this on every PR, only
+changes to ``SKILL.md`` frontmatter or ``catalog/rules.yaml`` and on-demand
+runs (see ``evals/README.md``).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+from collections.abc import Iterator
+from datetime import datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from evallib.models import MODEL_MATRIX, ModelCallError, SamplerSettings, generate
+from evallib.triggers import SkillIdentity, TriggerPrompt, load_suite, skill_identity
+
+# A yes/no classification wants no sampling variance; temperature 0 gives a
+# stable verdict across the reruns that iterating a description depends on.
+# The token cap is deliberately generous, not tight: the verdict is one
+# short JSON object, but a model that emits a sentence of reasoning before
+# it would trip models._reject_if_truncated at a small cap, and a truncated
+# call is a hard failure that re-fails identically on every rerun -- so the
+# prompt would be permanently absent from the rates that gate M4. 1000
+# tokens clears any reasonable preamble while still bounding a runaway reply.
+CLASSIFIER_SAMPLER = SamplerSettings(temperature=0.0, top_p=1.0, max_tokens=1000)
+
+CLASSIFIER_SYSTEM_PROMPT = (
+    "You route user requests to agent skills. You are given one skill's "
+    "name and description, then a user request. Decide only whether that "
+    "skill should activate for that request. Judge against the description "
+    "exactly as written -- do not give the skill the benefit of the doubt, "
+    "and do not invent capabilities it does not claim. Reply with a single "
+    'JSON object and nothing else: {"activate": true} or {"activate": false}.'
+)
+
+_OPENING_BRACE = re.compile(r"\{")
+
+# Some model slots answer the boolean field with a stringified verdict
+# ({"activate": "false"}) or a word ({"activate": "no"}). bool() on any
+# non-empty string is True, so a bare bool() cast would score those as
+# activations. Map the known spellings explicitly; anything else is an
+# unparseable verdict, not a guess.
+_ACTIVATION_WORDS = {
+    "true": True,
+    "yes": True,
+    "activate": True,
+    "false": False,
+    "no": False,
+    "skip": False,
+}
+
+
+def build_classifier_prompt(skill: SkillIdentity, request: str) -> str:
+    return (
+        f"Skill name: {skill.name}\n\n"
+        f"Skill description:\n{skill.description}\n\n"
+        f"User request:\n{request}\n\n"
+        'Should this skill activate? Reply with {"activate": true} or {"activate": false}.'
+    )
+
+
+def parse_activation(response_text: str) -> bool:
+    """The classifier's verdict as a bool. Prefers a JSON ``{"activate": ...}``
+    object; falls back to a yes/no word from a prose reply. Raises
+    ModelCallError only when neither yields a verdict rather than guessing -- an
+    unparseable verdict is a failed cell, recorded and retried, not a silent
+    false that would skew the false-fire rate."""
+    for verdict_object in _json_objects(response_text):
+        if not isinstance(verdict_object, dict) or "activate" not in verdict_object:
+            continue
+        verdict = _as_activation_bool(verdict_object["activate"])
+        if verdict is not None:
+            return verdict
+    prose_verdict = _activation_from_prose(response_text)
+    if prose_verdict is not None:
+        return prose_verdict
+    raise ModelCallError(
+        f"classifier response has no usable 'activate' verdict: {response_text!r}"
+    )
+
+
+def _activation_from_prose(text: str) -> bool | None:
+    """A best-effort verdict from a model that answered in prose instead of
+    the requested JSON object (``Yes, this should activate.``). Without this a
+    single such reply fails permanently: temperature is 0, so the same prompt
+    re-fails identically on every rerun, and one unparseable cell holds
+    ``meets_m4`` at false forever. The first activation word wins, matching how
+    these replies open (``Yes...`` / ``No...``); a reply with no such word
+    still raises. ``activate`` is left out of the match set on purpose -- it
+    echoes the question (``Should this skill activate?``) and would read a
+    ``should not activate`` sentence as a yes."""
+    prose_words = {"yes": True, "true": True, "no": False, "false": False, "skip": False}
+    for match in re.finditer(r"[a-z]+", text.lower()):
+        verdict = prose_words.get(match.group())
+        if verdict is not None:
+            return verdict
+    return None
+
+
+def _json_objects(text: str) -> Iterator[object]:
+    """Every JSON value that parses cleanly starting at a ``{`` in ``text``,
+    left to right. ``raw_decode`` consumes one whole value and ignores the
+    trailing text, so a verdict wrapped in prose (``Sure: {"activate": true}``)
+    or carrying a nested object (``{"activate": true, "why": {...}}``) is still
+    read whole -- a regex that stopped at the first ``}`` would hand back only
+    the inner object and miss the verdict entirely."""
+    decoder = json.JSONDecoder()
+    for brace in _OPENING_BRACE.finditer(text):
+        try:
+            parsed, _ = decoder.raw_decode(text, brace.start())
+        except json.JSONDecodeError:
+            continue
+        yield parsed
+
+
+def _as_activation_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):  # {"activate": 1} / {"activate": 0}
+        return value != 0
+    if isinstance(value, str):
+        return _ACTIVATION_WORDS.get(value.strip().lower())
+    return None
+
+
+def classify_one(
+    prompt: TriggerPrompt,
+    skill: SkillIdentity,
+    model_slot: str,
+    triggers_dir: Path,
+    force: bool,
+) -> dict | None:
+    """Classifies one prompt and writes ``raw/<id>.json``, or returns the
+    already-saved classification on a resume. Returns None when the call failed
+    (an ``raw/<id>.error.json`` is left behind, mirroring run_bench.py)."""
+    spec = next((m for m in MODEL_MATRIX if m.slot == model_slot), None)
+    if spec is None:
+        raise ValueError(f"no model in MODEL_MATRIX with slot {model_slot!r}")
+
+    raw_dir = triggers_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    classification_path = raw_dir / f"{prompt.id}.json"
+    error_path = raw_dir / f"{prompt.id}.error.json"
+
+    if classification_path.exists() and not force:
+        saved = _load_saved_classification(classification_path)
+        if saved is not None and _resumable(saved, prompt, skill, model_slot):
+            print(f"  KEPT {prompt.id} -- already classified (pass --force to redo)")
+            return saved
+        if saved is not None:
+            print(
+                f"  STALE {prompt.id} -- re-classifying (prompt text/label, skill "
+                "description, or --model changed since it was saved)"
+            )
+
+    system_prompt = CLASSIFIER_SYSTEM_PROMPT
+    user_prompt = build_classifier_prompt(skill, prompt.prompt)
+    try:
+        response_text = generate(spec, system_prompt, user_prompt, CLASSIFIER_SAMPLER)
+        activated = parse_activation(response_text)
+    except ModelCallError as error:
+        # Leave any previously-saved classification in place. A transient API
+        # error while re-classifying a STALE cell shouldn't destroy the last
+        # good verdict on disk -- _resumable() already refuses to reuse a stale
+        # cell, so the next rerun re-classifies it anyway, and until then the
+        # old result beats no result. The .error.json marks it for retry.
+        error_path.write_text(
+            json.dumps(
+                {
+                    "prompt_id": prompt.id,
+                    "model_slot": model_slot,
+                    "error": str(error),
+                    "failed_at": datetime.now(timezone.utc).isoformat(),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        print(f"  FAILED {prompt.id}: {error}", file=sys.stderr)
+        return None
+
+    classification = {
+        "prompt_id": prompt.id,
+        "label": prompt.label,
+        "category": prompt.category,
+        "prompt": prompt.prompt,
+        "should_activate": prompt.should_activate,
+        "activated": activated,
+        "correct": activated == prompt.should_activate,
+        "model_slot": model_slot,
+        "model_id": spec.model_id,
+        "skill_name": skill.name,
+        "skill_description": skill.description,
+        "raw_response": response_text,
+        "classified_at": datetime.now(timezone.utc).isoformat(),
+    }
+    classification_path.write_text(json.dumps(classification, indent=2), encoding="utf-8")
+    error_path.unlink(missing_ok=True)
+    verdict = "activate" if activated else "skip"
+    mark = "ok" if classification["correct"] else "MISS"
+    print(f"  {prompt.id} [{prompt.label}] -> {verdict} ({mark})")
+    return classification
+
+
+def _load_saved_classification(path: Path) -> dict | None:
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return saved if isinstance(saved, dict) and "activated" in saved else None
+
+
+def _resumable(
+    saved: dict, prompt: TriggerPrompt, skill: SkillIdentity, model_slot: str
+) -> bool:
+    """A saved cell can be kept only if nothing that feeds its verdict has
+    changed since it was written: the prompt text and label it was scored on,
+    the skill description it was classified against, and the model. A
+    maintainer who rewords a prompt or fixes a mislabeled one keeps its ``id``,
+    so an id match alone would return a verdict computed against superseded
+    ground truth -- and summarize() reads ``label``/``category``/
+    ``should_activate`` straight off the stale cell. evals/README.md says to
+    rerun "whenever SKILL.md frontmatter changes"; the same reasoning covers a
+    changed prompt. A cell saved before a field existed won't match and is
+    re-classified."""
+    return (
+        saved.get("prompt") == prompt.prompt
+        and saved.get("label") == prompt.label
+        and saved.get("category") == prompt.category
+        and saved.get("skill_description") == skill.description
+        and saved.get("model_slot") == model_slot
+    )
+
+
+def summarize(
+    classifications: list[dict],
+    skill: SkillIdentity,
+    model_slot: str,
+    *,
+    suite_fully_scored: bool,
+) -> dict:
+    positives = [c for c in classifications if c["should_activate"]]
+    negatives = [c for c in classifications if not c["should_activate"]]
+    activated_positives = [c for c in positives if c["activated"]]
+    activated_negatives = [c for c in negatives if c["activated"]]
+
+    activation_rate = _pct(len(activated_positives), len(positives))
+    false_fire_rate = _pct(len(activated_negatives), len(negatives))
+
+    false_fire_by_category: dict[str, dict] = {}
+    for negative in negatives:
+        bucket = false_fire_by_category.setdefault(
+            negative["category"], {"total": 0, "false_fires": 0}
+        )
+        bucket["total"] += 1
+        bucket["false_fires"] += 1 if negative["activated"] else 0
+
+    meets_activation = activation_rate is not None and activation_rate >= 90.0
+    meets_false_fire = false_fire_rate is not None and false_fire_rate <= 10.0
+    # A rate computed over a subset of the suite -- because cells failed to
+    # classify, or --limit sampled only N -- is not an M4 verdict. The
+    # missing prompts could all be misses; reporting "meets M4" off what
+    # happened to succeed is how a tuning decision gets made against an
+    # instrument that measured half the suite.
+    meets_m4 = suite_fully_scored and meets_activation and meets_false_fire
+
+    return {
+        "suite_fully_scored": suite_fully_scored,
+        "classifier_model_slot": model_slot,
+        "skill_name": skill.name,
+        "skill_description": skill.description,
+        "classifier_sampler": {
+            "temperature": CLASSIFIER_SAMPLER.temperature,
+            "top_p": CLASSIFIER_SAMPLER.top_p,
+            "max_tokens": CLASSIFIER_SAMPLER.max_tokens,
+        },
+        "counts": {
+            "positives_classified": len(positives),
+            "negatives_classified": len(negatives),
+        },
+        "activation_rate_pct": activation_rate,
+        "false_fire_rate_pct": false_fire_rate,
+        "m4_targets": {"activation_rate_pct": ">=90", "false_fire_rate_pct": "<=10"},
+        "meets_m4": bool(meets_m4),
+        "false_fire_by_negative_category": false_fire_by_category,
+        "positives_not_activated": sorted(
+            c["prompt_id"] for c in positives if not c["activated"]
+        ),
+        "negatives_activated": sorted(
+            c["prompt_id"] for c in negatives if c["activated"]
+        ),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _pct(part: int, whole: int) -> float | None:
+    if whole == 0:
+        return None
+    return round(part * 100 / whole, 1)
+
+
+def _require_api_key(model_slot: str) -> None:
+    spec = next((m for m in MODEL_MATRIX if m.slot == model_slot), None)
+    if spec is None:
+        known = ", ".join(sorted(m.slot for m in MODEL_MATRIX))
+        raise SystemExit(f"unknown --model {model_slot!r}. Known slots: {known}")
+    if not os.environ.get(spec.api_key_env):
+        raise SystemExit(
+            f"--model {model_slot} needs {spec.api_key_env} set to classify "
+            f"({spec.provider} model {spec.model_id!r}). Use --dry-run to check "
+            "the suite and prompts without a key."
+        )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--out", required=True, help="run directory, e.g. evals/results/2026-08-29"
+    )
+    parser.add_argument(
+        "--model",
+        default="claude",
+        help="matrix slot to classify with (default: claude -- the skill's primary harness)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="classify only N prompts, drawn alternately from positives and "
+        "negatives -- a cheap smoke test of the runner that still hits both paths",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print what would be sent, call nothing"
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="re-classify prompts already on disk (default: keep them, so an "
+        "interrupted pass resumes without re-billing)",
+    )
+    args = parser.parse_args()
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be a positive integer")
+
+    suite = load_suite()
+    skill = skill_identity()
+    prompts = _limited_sample(suite, args.limit) if args.limit is not None else suite
+
+    if args.dry_run:
+        print(f"skill name: {skill.name}")
+        print(f"skill description: {len(skill.description)} chars")
+        print(f"classifier: {args.model} slot, sampler {CLASSIFIER_SAMPLER}")
+        print(f"would classify {len(prompts)} of {len(suite)} prompts")
+        example = build_classifier_prompt(skill, prompts[0].prompt)
+        print(f"\n--- example call for {prompts[0].id} ---")
+        print(f"system: {CLASSIFIER_SYSTEM_PROMPT}")
+        print(f"user:\n{example}")
+        return 0
+
+    _require_api_key(args.model)
+
+    triggers_dir = Path(args.out) / "triggers"
+    classifications: list[dict] = []
+    failed_prompt_ids: list[str] = []
+    for prompt in prompts:
+        classification = classify_one(prompt, skill, args.model, triggers_dir, args.force)
+        if classification is None:
+            failed_prompt_ids.append(prompt.id)
+        else:
+            classifications.append(classification)
+
+    ran_whole_suite = args.limit is None
+    suite_fully_scored = ran_whole_suite and not failed_prompt_ids
+    summary = summarize(
+        classifications, skill, args.model, suite_fully_scored=suite_fully_scored
+    )
+    summary["classification_failures"] = len(failed_prompt_ids)
+    summary["failed_prompt_ids"] = sorted(failed_prompt_ids)
+    summary["limited_to_first_n"] = args.limit
+
+    # A --limit run scores only a sample of N prompts, so its meets_m4 is false
+    # and its rates cover a fraction of the suite. Writing that to
+    # triggers_summary.json would clobber a real full-pass verdict sitting in
+    # the same --out directory (RESULTS.md publication reads that file), so a
+    # smoke test lands in its own file instead.
+    summary_name = (
+        "triggers_summary.partial.json"
+        if args.limit is not None
+        else "triggers_summary.json"
+    )
+    summary_path = triggers_dir / summary_name
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"\nwrote {summary_path}")
+    print(
+        f"  activation rate (positives): {_fmt_pct(summary['activation_rate_pct'])} "
+        "(M4 target >= 90%)"
+    )
+    print(
+        f"  false-fire rate (negatives): {_fmt_pct(summary['false_fire_rate_pct'])} "
+        "(M4 target <= 10%)"
+    )
+    print(f"  meets M4: {'yes' if summary['meets_m4'] else 'no'}")
+    if not ran_whole_suite:
+        print(
+            f"  NOTE: --limit {args.limit} scored only {len(prompts)} "
+            "prompts; this is a runner smoke test, not an M4 verdict."
+        )
+    if failed_prompt_ids:
+        print(
+            f"  WARNING: {len(failed_prompt_ids)} prompt(s) failed classification and "
+            f"are absent from the rates above: {', '.join(sorted(failed_prompt_ids))} "
+            "-- see raw/*.error.json, then rerun with the same --out to retry them.",
+            file=sys.stderr,
+        )
+    # A partial pass is a non-zero exit, not a green run with a stderr line:
+    # meets_m4 is already false, and an on-demand or CI caller should see the
+    # failure rather than trust a summary written over a shrunken sample. A
+    # --limit run is a partial pass by construction -- it scored only N of the
+    # 100 prompts -- so it fails the exit code too, matching the docstring and
+    # evals/README.md.
+    return 1 if (failed_prompt_ids or not ran_whole_suite) else 0
+
+
+def _limited_sample(suite: list[TriggerPrompt], limit: int) -> list[TriggerPrompt]:
+    """The first ``limit`` prompts, but drawn alternately from positives and
+    negatives so a smoke test exercises both classification paths and the
+    negative-side summary math. The suite lists all 60 positives before any
+    negative, so a plain ``suite[:limit]`` never scores a negative -- a
+    regression in false-fire bucketing would then pass every smoke test and
+    only surface in a paid full pass. Order within each label is preserved."""
+    positives = [p for p in suite if p.should_activate]
+    negatives = [p for p in suite if not p.should_activate]
+    interleaved: list[TriggerPrompt] = []
+    for positive, negative in zip(positives, negatives, strict=False):
+        interleaved.extend((positive, negative))
+    longer_tail = positives[len(negatives):] or negatives[len(positives):]
+    interleaved.extend(longer_tail)
+    return interleaved[:limit]
+
+
+def _fmt_pct(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.1f}%"
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
