@@ -114,7 +114,10 @@ def load_config(path):
 
     def test_single_definition_full_file_rewrite_is_scored_as_is(self):
         starter = "import json\n\n\ndef load_config(path):\n    return json.load(open(path))\n"
-        full_file = "import json\nimport os\n\n\ndef load_config(path):\n    return json.load(open(os.path.expanduser(path)))\n"
+        full_file = (
+            "import json\nimport os\n\n\ndef load_config(path):\n"
+            "    return json.load(open(os.path.expanduser(path)))\n"
+        )
         self.assertEqual(reconstruct_edited_file(starter, full_file), full_file)
 
     def test_fragment_dropping_a_helper_between_rewrites_records_the_deletion(self):
@@ -149,7 +152,8 @@ def cart_total(cart):
         self.assertIn("def add_line", rebuilt)
 
     def test_fragment_omitting_a_trailing_definition_keeps_it(self):
-        rebuilt = reconstruct_edited_file(CART_STARTER, "def add_line(cart, sku, qty, amt):\n    return cart\n")
+        fragment = "def add_line(cart, sku, qty, amt):\n    return cart\n"
+        rebuilt = reconstruct_edited_file(CART_STARTER, fragment)
 
         self.assertIn("def cart_total", rebuilt)
 
