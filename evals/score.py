@@ -345,6 +345,62 @@ def _lines_in_span(source_lines: list[str], span: tuple[int, int]) -> list[str]:
     return source_lines[first_line - 1 : last_line]
 
 
+def _leading_whitespace(line: str) -> str:
+    return line[: len(line) - len(line.lstrip())]
+
+
+def _starter_method_spans(
+    tree: ast.Module, source_lines: list[str]
+) -> dict[str, list[tuple[str, tuple[int, int], str]]]:
+    """method name -> list of (owning class, (first_line, last_line), indent)
+    for every method of a top-level class. A completion that returns just the
+    one changed method -- dedented to column 0, so it parses as a top-level
+    function -- is spliced back into its class instead of appended as a stray
+    module-level function (#26). Scenario 02's starter is a single class with
+    no top-level function at all."""
+    methods: dict[str, list[tuple[str, tuple[int, int], str]]] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for child in node.body:
+            if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            first_line = min([child.lineno, *(d.lineno for d in child.decorator_list)])
+            indent = _leading_whitespace(source_lines[first_line - 1])
+            span = (first_line, child.end_lineno)
+            methods.setdefault(child.name, []).append((node.name, span, indent))
+    return methods
+
+
+def _reindent(body_lines: list[str], indent: str) -> list[str]:
+    """A completion method returned at column 0, re-indented to sit in a class
+    body so only the lines the model actually changed show up in the M3 diff."""
+    non_blank = [line for line in body_lines if line.strip()]
+    own_indent = min((len(_leading_whitespace(line)) for line in non_blank), default=0)
+    return [indent + line[own_indent:] if line.strip() else "" for line in body_lines]
+
+
+def _rebuild_class_with_method_edits(
+    starter_lines: list[str],
+    class_span: tuple[int, int],
+    completion_lines: list[str],
+    method_edits: list[tuple[tuple[int, int], str, tuple[int, int]]],
+) -> list[str]:
+    """The starter's class span with each edited method swapped in place and
+    every other line kept byte-for-byte."""
+    class_first, class_last = class_span
+    rebuilt: list[str] = []
+    next_line = class_first
+    for (method_first, method_last), indent, completion_span in sorted(method_edits):
+        rebuilt.extend(starter_lines[next_line - 1 : method_first - 1])
+        rebuilt.extend(
+            _reindent(_lines_in_span(completion_lines, completion_span), indent)
+        )
+        next_line = method_last + 1
+    rebuilt.extend(starter_lines[next_line - 1 : class_last])
+    return rebuilt
+
+
 def _definitions_removed_by_fragment(
     starter_defs_in_order: list[tuple[str, tuple[int, int]]],
     completion_spans: dict[str, tuple[int, int]],
@@ -405,14 +461,23 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     # un-echoed starter line as a deletion).
     completion_redefines_every_name = starter_spans.keys() <= completion_spans.keys()
     starter_prologue = _prologue_lines(starter_tree, starter_lines)
-    completion_keeps_starter_prologue = starter_prologue <= _prologue_lines(
-        completion_tree, completion_lines
+    completion_keeps_starter_prologue = bool(starter_prologue) and starter_prologue <= (
+        _prologue_lines(completion_tree, completion_lines)
     )
-    completion_is_full_file = completion_redefines_every_name and (
-        not starter_prologue
-        or completion_keeps_starter_prologue
-        or _completion_echoes_an_unchanged_definition(
-            starter_spans, completion_spans, starter_lines, completion_lines
+    completion_echoes_unchanged_definition = _completion_echoes_an_unchanged_definition(
+        starter_spans, completion_spans, starter_lines, completion_lines
+    )
+    # A whole-file completion that renamed or dropped a top-level definition on
+    # purpose no longer redefines every starter name, so the name-coverage test
+    # alone misreads it as a fragment and splices the stale definition back
+    # (#26). Reproducing the starter's entire prologue -- its docstring and
+    # imports -- is the signal that the model returned the whole file anyway; a
+    # bare fragment carries none of it.
+    completion_is_full_file = completion_keeps_starter_prologue or (
+        completion_redefines_every_name
+        and (
+            not starter_prologue
+            or completion_echoes_unchanged_definition
         )
     )
     if not completion_spans or completion_is_full_file:
@@ -423,6 +488,24 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
         starter_defs_in_order, completion_spans, completion_code
     )
 
+    # A completion def that names no top-level starter definition but exactly
+    # one method of a top-level starter class is that method's rewrite, not a
+    # new module-level function (#26).
+    starter_method_spans = _starter_method_spans(starter_tree, starter_lines)
+    method_edits_by_class: dict[str, list[tuple[tuple[int, int], str, tuple[int, int]]]] = {}
+    spliced_method_names: set[str] = set()
+    for name, completion_span in completion_spans.items():
+        if name in starter_spans:
+            continue
+        owners = starter_method_spans.get(name, [])
+        if len(owners) != 1:
+            continue
+        owning_class, method_span, indent = owners[0]
+        method_edits_by_class.setdefault(owning_class, []).append(
+            (method_span, indent, completion_span)
+        )
+        spliced_method_names.add(name)
+
     rebuilt: list[str] = []
     next_starter_line = 1
     for name, (first_line, last_line) in starter_defs_in_order:
@@ -432,13 +515,22 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
         rebuilt.extend(starter_lines[next_starter_line - 1 : first_line - 1])
         if name in completion_spans:
             rebuilt.extend(_lines_in_span(completion_lines, completion_spans[name]))
+        elif name in method_edits_by_class:
+            rebuilt.extend(
+                _rebuild_class_with_method_edits(
+                    starter_lines,
+                    (first_line, last_line),
+                    completion_lines,
+                    method_edits_by_class[name],
+                )
+            )
         else:
             rebuilt.extend(starter_lines[first_line - 1 : last_line])
         next_starter_line = last_line + 1
     rebuilt.extend(starter_lines[next_starter_line - 1 :])
 
     for name, span in completion_spans.items():
-        if name not in starter_spans:
+        if name not in starter_spans and name not in spliced_method_names:
             rebuilt.extend(["", "", *_lines_in_span(completion_lines, span)])
 
     return "\n".join(rebuilt) + "\n"

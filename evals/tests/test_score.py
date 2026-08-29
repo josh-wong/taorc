@@ -198,6 +198,61 @@ def cart_total(cart):
 
         self.assertNotIn("Shopping cart", rebuilt)
 
+    def test_fragment_of_one_class_method_is_spliced_into_the_class(self):
+        """Scenario 02: the starter is a single class with no top-level
+        function. A completion that returns only the corrected method, dedented
+        to column 0, must land inside the class -- not be appended as a stray
+        module-level function that leaves the bug in place."""
+        starter = '''\
+"""Inventory."""
+
+
+class Inventory:
+    def __init__(self):
+        self.items = {}
+
+    def reserve(self, sku, qty):
+        self.items[sku] = self.items.get(sku, 0) - qty
+        return self.items[sku] > 0
+'''
+        corrected_method = '''\
+def reserve(self, sku, qty):
+    if self.items.get(sku, 0) < qty:
+        return False
+    self.items[sku] -= qty
+    return True
+'''
+        rebuilt = reconstruct_edited_file(starter, corrected_method)
+
+        self.assertIn("    def reserve(self, sku, qty):", rebuilt)
+        self.assertNotIn("\ndef reserve", rebuilt)
+        self.assertEqual(rebuilt.count("def reserve"), 1)
+        self.assertIn("        if self.items.get(sku, 0) < qty:", rebuilt)
+        # The edit is the method body, not the whole class.
+        self.assertLessEqual(diff_line_count(starter, rebuilt), 8)
+
+    def test_full_file_rewrite_that_renames_a_trailing_definition_is_scored_as_is(self):
+        """Scenario 03: the completion returns the whole file but renames the
+        last function. It no longer redefines every starter name, yet it
+        carries the starter's whole prologue -- so it is a rewrite, and the old
+        name must not be spliced back alongside the new one."""
+        rewrite_renaming_total = '''\
+"""Shopping cart."""
+
+
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt})
+    return cart
+
+
+def total_cents(cart):
+    return sum(line["qty"] * line["amt"] for line in cart)
+'''
+        rebuilt = reconstruct_edited_file(CART_STARTER, rewrite_renaming_total)
+
+        self.assertEqual(rebuilt, rewrite_renaming_total)
+        self.assertNotIn("def cart_total", rebuilt)
+
 
 if __name__ == "__main__":
     unittest.main()
