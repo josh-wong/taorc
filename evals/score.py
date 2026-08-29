@@ -44,7 +44,20 @@ from evallib.scenarios import Scenario, load_all_scenarios  # noqa: E402
 sys.path.insert(0, str(LINT_SCRIPT.parent))
 from taorc_lint import short_python_function_ranges  # noqa: E402
 
-CODE_FENCE_PATTERN = re.compile(r"```(?:\w+)?\n(.*?)```", re.DOTALL)
+CODE_FENCE_PATTERN = re.compile(r"```([\w+-]*)\n(.*?)```", re.DOTALL)
+
+# Fence languages that count as "the code" for a given scenario output file.
+# A skill-condition completion often wraps the answer in a ```python block and
+# then adds longer ```text blocks (a findings list, a behaviour check), so
+# "longest fenced block" alone picks the prose. Matching the language first
+# keeps scoring on the actual code.
+FENCE_LANGS_FOR_SUFFIX = {
+    ".py": {"python", "py"},
+    ".ts": {"typescript", "ts"},
+    ".tsx": {"tsx", "typescript"},
+    ".js": {"javascript", "js"},
+    ".jsx": {"jsx", "javascript"},
+}
 
 # Sourced from the N1 ast-grep rule itself (rather than a second hardcoded
 # list here) so this metric can't silently drift from what the linter
@@ -66,14 +79,19 @@ def load_empty_word_pattern() -> re.Pattern:
 EMPTY_WORD_PATTERN = load_empty_word_pattern()
 
 
-def extract_code(completion_text: str) -> str:
+def extract_code(completion_text: str, output_suffix: str = "") -> str:
     """A raw completion is often prose plus one or more fenced code blocks.
-    Score the largest fenced block; if the model returned bare code with no
-    fence at all, score the whole response."""
+    Prefer the largest block whose fence language matches the scenario's
+    output file; fall back to the largest block of any language; if the
+    model returned bare code with no fence at all, score the whole
+    response."""
     blocks = CODE_FENCE_PATTERN.findall(completion_text)
     if not blocks:
         return completion_text
-    return max(blocks, key=len)
+    wanted_langs = FENCE_LANGS_FOR_SUFFIX.get(output_suffix.lower(), set())
+    same_language_blocks = [body for lang, body in blocks if lang.lower() in wanted_langs]
+    candidates = same_language_blocks or [body for _lang, body in blocks]
+    return max(candidates, key=len)
 
 
 def count_loc(code: str) -> int:
@@ -86,7 +104,7 @@ def count_comments(code: str) -> int | None:
     comment-line count for the why-comment share below."""
     try:
         tokens = list(tokenize.generate_tokens(StringIO(code).readline))
-    except (tokenize.TokenizeError, SyntaxError, IndentationError):
+    except (tokenize.TokenError, SyntaxError, IndentationError):
         return None
     return sum(1 for tok in tokens if tok.type == tokenize.COMMENT)
 
@@ -283,8 +301,8 @@ def _starter_for_output_file(scenario: Scenario) -> str | None:
 
 def score_completion(scenario: Scenario, completion_path: Path) -> dict:
     completion_text = completion_path.read_text(encoding="utf-8")
-    code = extract_code(completion_text)
     file_extension = Path(scenario.output_file).suffix
+    code = extract_code(completion_text, file_extension)
     loc = count_loc(code)
     findings = run_lint(code, file_extension)
     max_depth, mean_depth = nesting_depth(code)

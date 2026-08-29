@@ -335,8 +335,8 @@ def run_judging(run_dir: Path, force: bool, seed: int | None) -> dict:
             if not (baseline_path.exists() and skill_path.exists()):
                 continue
 
-            baseline_code = extract_code(baseline_path.read_text(encoding="utf-8"))
-            skill_code = extract_code(skill_path.read_text(encoding="utf-8"))
+            baseline_code = extract_code(baseline_path.read_text(encoding="utf-8"), completion_ext)
+            skill_code = extract_code(skill_path.read_text(encoding="utf-8"), completion_ext)
 
             judgments = judge_pair_repeatedly(
                 scenario.id,
