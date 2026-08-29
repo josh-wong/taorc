@@ -331,7 +331,9 @@ def collect_generation_errors(run_dir: Path) -> list[dict]:
         try:
             errors.append(json.loads(error_path.read_text(encoding="utf-8")))
         except (OSError, json.JSONDecodeError):
-            errors.append({"error_file": str(error_path.relative_to(run_dir)), "error": "unreadable"})
+            errors.append(
+                {"error_file": str(error_path.relative_to(run_dir)), "error": "unreadable"}
+            )
     return errors
 
 

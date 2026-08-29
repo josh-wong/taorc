@@ -242,7 +242,10 @@ def judge_pair_repeatedly(
     judgments: list[dict] = []
     for judge_spec in judge_models_for(generation_slot):
         for judging_pass in range(1, PASSES_PER_JUDGE + 1):
-            label = f"{scenario_id} / {generation_slot} / judge={judge_spec.slot} pass {judging_pass}"
+            label = (
+                f"{scenario_id} / {generation_slot} / "
+                f"judge={judge_spec.slot} pass {judging_pass}"
+            )
             out_path = judgments_dir / (
                 f"{scenario_id}__{generation_slot}__judge-{judge_spec.slot}__pass{judging_pass}.json"
             )
