@@ -58,6 +58,11 @@ from lib import (
     read_version,
 )
 
+# evallib.triggers owns the M4 trigger-suite shape checks (check_trigger_suite)
+# and the SKILL.md frontmatter slicing check_skill_spec reuses. Put evals/ on
+# the path once here so both can import it.
+sys.path.insert(0, str(REPO_ROOT / "evals"))
+
 # templates/agent-block.md's budget is imported from build.py rather than
 # duplicated here, so the two scripts can't drift onto different limits.
 BUDGETS = {
@@ -516,15 +521,18 @@ def _parse_frontmatter(text: str) -> dict | None:
 
     Malformed YAML returns None rather than propagating: this gate's job is to
     report what is wrong with the file, and a traceback out of here would take
-    down the checks that run after it as well.
+    down the checks that run after it as well. The ``---`` fence slicing is
+    evallib.triggers.frontmatter_block so SKILL.md's frontmatter is cut one
+    way, not two; only the byte offsets are shared -- that copy raises where
+    this returns None.
     """
-    if not text.startswith("---\n"):
-        return None
-    end = text.find("\n---\n", 3)
-    if end == -1:
+    from evallib.triggers import frontmatter_block
+
+    block = frontmatter_block(text)
+    if block is None:
         return None
     try:
-        parsed = yaml.safe_load(text[4 : end + 1])
+        parsed = yaml.safe_load(block)
     except yaml.YAMLError:
         return None
     return parsed if isinstance(parsed, dict) else None
@@ -618,7 +626,6 @@ def check_trigger_suite() -> list[str]:
     triggers_path = REPO_ROOT / "evals" / "triggers.json"
     if not triggers_path.exists():
         return []
-    sys.path.insert(0, str(REPO_ROOT / "evals"))
     try:
         from evallib.triggers import TriggerSuiteError, load_suite
     except ImportError as error:

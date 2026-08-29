@@ -144,13 +144,13 @@ def classify_one(
 
     if result_path.exists() and not force:
         saved = _load_saved_result(result_path)
-        if saved is not None and _resumable(saved, skill, model_slot):
+        if saved is not None and _resumable(saved, prompt, skill, model_slot):
             print(f"  KEPT {prompt.id} -- already classified (pass --force to redo)")
             return saved
         if saved is not None:
             print(
-                f"  STALE {prompt.id} -- re-classifying (skill description or "
-                "--model changed since it was saved)"
+                f"  STALE {prompt.id} -- re-classifying (prompt text/label, skill "
+                "description, or --model changed since it was saved)"
             )
 
     system_prompt = CLASSIFIER_SYSTEM_PROMPT
@@ -206,15 +206,24 @@ def _load_saved_result(path: Path) -> dict | None:
     return saved if isinstance(saved, dict) and "activated" in saved else None
 
 
-def _resumable(saved: dict, skill: SkillIdentity, model_slot: str) -> bool:
-    """A saved cell can be kept only if it was classified against the same
-    skill description and the same model. evals/README.md says to rerun
-    "whenever SKILL.md frontmatter changes" -- resuming across that edit
-    would keep verdicts from the old description while the summary header
-    reports the new one. A cell saved before this field existed has no
-    recorded description and is re-classified."""
+def _resumable(
+    saved: dict, prompt: TriggerPrompt, skill: SkillIdentity, model_slot: str
+) -> bool:
+    """A saved cell can be kept only if nothing that feeds its verdict has
+    changed since it was written: the prompt text and label it was scored on,
+    the skill description it was classified against, and the model. A
+    maintainer who rewords a prompt or fixes a mislabeled one keeps its ``id``,
+    so an id match alone would return a verdict computed against superseded
+    ground truth -- and summarize() reads ``label``/``category``/
+    ``should_activate`` straight off the stale cell. evals/README.md says to
+    rerun "whenever SKILL.md frontmatter changes"; the same reasoning covers a
+    changed prompt. A cell saved before a field existed won't match and is
+    re-classified."""
     return (
-        saved.get("skill_description") == skill.description
+        saved.get("prompt") == prompt.prompt
+        and saved.get("label") == prompt.label
+        and saved.get("category") == prompt.category
+        and saved.get("skill_description") == skill.description
         and saved.get("model_slot") == model_slot
     )
 
@@ -392,8 +401,11 @@ def main() -> int:
         )
     # A partial pass is a non-zero exit, not a green run with a stderr line:
     # meets_m4 is already false, and an on-demand or CI caller should see the
-    # failure rather than trust a summary written over a shrunken sample.
-    return 1 if failed_prompt_ids else 0
+    # failure rather than trust a summary written over a shrunken sample. A
+    # --limit run is a partial pass by construction -- it scored only the first
+    # N prompts -- so it fails the exit code too, matching the docstring and
+    # evals/README.md.
+    return 1 if (failed_prompt_ids or not ran_whole_suite) else 0
 
 
 def _fmt_pct(value: float | None) -> str:

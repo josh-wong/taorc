@@ -192,14 +192,26 @@ def load_suite(path: Path = TRIGGERS_PATH) -> list[TriggerPrompt]:
     return prompts
 
 
-def _parse_frontmatter(text: str) -> dict:
+def frontmatter_block(text: str) -> str | None:
+    """The raw YAML inside a leading ``---\\n`` ... ``\\n---\\n`` fence, or None
+    if the text has no well-formed one. scripts/validate.py slices SKILL.md's
+    frontmatter the same way for its own checks and imports this so the fence
+    offsets live in one place; each caller parses and reports on the result in
+    its own style (that one returns None where this raises)."""
     if not text.startswith("---\n"):
-        raise TriggerSuiteError(f"{SKILL_MD_PATH}: no YAML frontmatter")
+        return None
     end = text.find("\n---\n", 3)
     if end == -1:
-        raise TriggerSuiteError(f"{SKILL_MD_PATH}: unterminated YAML frontmatter")
+        return None
+    return text[4 : end + 1]
+
+
+def _parse_frontmatter(text: str) -> dict:
+    block = frontmatter_block(text)
+    if block is None:
+        raise TriggerSuiteError(f"{SKILL_MD_PATH}: no well-formed YAML frontmatter")
     try:
-        parsed = yaml.safe_load(text[4 : end + 1])
+        parsed = yaml.safe_load(block)
     except yaml.YAMLError as error:
         raise TriggerSuiteError(
             f"{SKILL_MD_PATH}: frontmatter is not valid YAML ({error})"
