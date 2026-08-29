@@ -48,6 +48,14 @@ A model with no key set is skipped with a warning rather than failing the
 run, so you can gather keys incrementally. Use `--dry-run` on `run_bench.py`
 to see what would be sent without calling anything or spending money.
 
+Both `run_bench.py` and `judge.py` resume: a completion or judgment already
+on disk is kept, not re-billed, so an interrupted run finishes by being
+re-invoked with the same `--out`/`--run`. Pass `--force` to regenerate. A
+generation that fails leaves a `<condition>.error.json`, which `score.py`
+lists under `generation_errors` so a missing cell reads as a known gap
+rather than a zero. Transient provider errors (timeouts, 429/5xx) are
+retried with backoff before a cell is given up on.
+
 Sampler settings are fixed in `evallib/models.py`'s `DEFAULT_SAMPLER` and
 written into every completion's `.meta.json` — copy them into `RESULTS.md`
 verbatim (§10.3's reproducibility requirement is about sampler settings,

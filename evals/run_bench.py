@@ -16,6 +16,13 @@ Each model slot needs its own API key set (see evals/evallib/models.py's
 MODEL_MATRIX for which env var). A model with no key set is skipped with a
 warning rather than failing the whole run, so a partial matrix is still
 usable while keys are being gathered.
+
+Re-running against a directory that already holds completions is safe: a
+cell with a non-empty completion file is kept, not regenerated, so an
+interrupted paid run resumes by just being re-invoked (pass --force to
+regenerate). A cell whose generation failed leaves a <condition>.error.json
+behind -- a durable record that score.py surfaces -- and is retried on the
+next run.
 """
 
 from __future__ import annotations
@@ -39,7 +46,12 @@ def output_extension(scenario: Scenario) -> str:
 
 
 def run_one(
-    scenario: Scenario, model_slot: str, condition: str, out_dir: Path, dry_run: bool
+    scenario: Scenario,
+    model_slot: str,
+    condition: str,
+    out_dir: Path,
+    dry_run: bool,
+    force: bool,
 ) -> None:
     spec = next((m for m in MODEL_MATRIX if m.slot == model_slot), None)
     if spec is None:
@@ -59,14 +71,37 @@ def run_one(
     target_dir.mkdir(parents=True, exist_ok=True)
     completion_path = target_dir / f"{condition}{output_extension(scenario)}"
     metadata_path = target_dir / f"{condition}.meta.json"
+    error_path = target_dir / f"{condition}.error.json"
+
+    already_done = completion_path.exists() and completion_path.stat().st_size > 0
+    if already_done and not force:
+        print(
+            f"  KEPT {scenario.id} / {model_slot} / {condition} -- already generated "
+            "(pass --force to regenerate)"
+        )
+        return
 
     try:
         completion = generate(spec, system_prompt, user_prompt, DEFAULT_SAMPLER)
     except ModelCallError as error:
+        error_path.write_text(
+            json.dumps(
+                {
+                    "scenario_id": scenario.id,
+                    "model_slot": model_slot,
+                    "condition": condition,
+                    "error": str(error),
+                    "failed_at": datetime.now(timezone.utc).isoformat(),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         print(f"  SKIPPED {scenario.id} / {model_slot} / {condition}: {error}", file=sys.stderr)
         return
 
     completion_path.write_text(completion, encoding="utf-8")
+    error_path.unlink(missing_ok=True)  # a prior failure that has since succeeded
     metadata_path.write_text(
         json.dumps(
             {
@@ -108,6 +143,12 @@ def main() -> int:
         help="comma-separated scenario ids to run (default: all)",
     )
     parser.add_argument("--dry-run", action="store_true", help="print what would run, call nothing")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="regenerate cells that already have a completion (default: keep them, so an "
+        "interrupted run resumes without re-billing finished work)",
+    )
     args = parser.parse_args()
 
     out_dir = Path(args.out)
@@ -132,7 +173,7 @@ def main() -> int:
         print(f"{scenario.id} ({scenario.title})")
         for model_slot in model_slots:
             for condition in CONDITIONS:
-                run_one(scenario, model_slot, condition, out_dir, args.dry_run)
+                run_one(scenario, model_slot, condition, out_dir, args.dry_run, args.force)
 
     return 0
 

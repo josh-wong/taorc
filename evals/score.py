@@ -14,6 +14,9 @@ Nothing here calls a model or costs money; it is pure text analysis over
 files run_bench.py already wrote, which is what "deterministic, free"
 (§10.2) means for this track.
 
+scores.json also carries a generation_errors list -- the cells run_bench.py
+recorded as failed -- so a missing number reads as a known gap, not a zero.
+
     python evals/score.py --run evals/results/2026-08-28
 """
 
@@ -318,6 +321,20 @@ def score_run(run_dir: Path) -> dict:
     return scores
 
 
+def collect_generation_errors(run_dir: Path) -> list[dict]:
+    """Every cell run_bench.py recorded as failed instead of scored, so a
+    reader of scores.json can tell a genuinely-absent number from a low
+    one. run_bench.py writes <condition>.error.json on failure and deletes
+    it once that cell later succeeds, so this is the live list of gaps."""
+    errors: list[dict] = []
+    for error_path in sorted((run_dir / "raw").glob("*/*/*.error.json")):
+        try:
+            errors.append(json.loads(error_path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            errors.append({"error_file": str(error_path.relative_to(run_dir)), "error": "unreadable"})
+    return errors
+
+
 def summarize_guardrail(scores: dict) -> dict:
     """Diff-size inflation on the three measure_diff_size scenarios, skill
     vs. baseline, averaged per model -- PRD M3. A baseline diff of zero
@@ -372,13 +389,30 @@ def main() -> int:
 
     scores = score_run(run_dir)
     guardrail = summarize_guardrail(scores)
+    generation_errors = collect_generation_errors(run_dir)
 
-    scores_document = {"scores": scores, "guardrail_diff_inflation_pct": guardrail}
+    scores_document = {
+        "scores": scores,
+        "guardrail_diff_inflation_pct": guardrail,
+        "generation_errors": generation_errors,
+    }
     scores_path = run_dir / "scores.json"
     scores_path.write_text(json.dumps(scores_document, indent=2), encoding="utf-8")
     print(f"wrote {scores_path}")
     for model_slot, inflation_pct in guardrail.items():
         print(f"  {model_slot}: diff-size inflation {inflation_pct:+.1f}% (M3 target <= 10%)")
+    if generation_errors:
+        print(
+            f"  WARNING: {len(generation_errors)} cell(s) failed generation and are absent "
+            "from the scores above, not scored as zero:",
+            file=sys.stderr,
+        )
+        for entry in generation_errors:
+            print(
+                f"    {entry.get('scenario_id', '?')} / {entry.get('model_slot', '?')} / "
+                f"{entry.get('condition', '?')}: {entry.get('error', '?')}",
+                file=sys.stderr,
+            )
     return 0
 
 

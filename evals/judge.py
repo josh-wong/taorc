@@ -13,7 +13,10 @@ produced it (R7.4); the preference counts and the per-category
 skill-vs-baseline delta are aggregated into judge_summary.json.
 
 The judge model is never the same model that generated the pair (§10.2), to
-reduce self-preference bias -- see judge_model_for() below.
+reduce self-preference bias -- see judge_models_for() below.
+
+A judgment already saved under judgments/ is reused, not re-billed, so an
+interrupted judging pass resumes by being re-invoked (pass --force to redo).
 
     python evals/judge.py --run evals/results/2026-08-28
 """
@@ -210,6 +213,18 @@ def summarize_rubric(rubric_samples: dict[str, dict[str, list[int]]]) -> dict:
     return summary
 
 
+def load_saved_judgment(path: Path) -> dict | None:
+    """A judgment file written by an earlier run, or None if it's absent or
+    unreadable -- a corrupt file just means that one judgment gets re-run."""
+    if not path.exists():
+        return None
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return saved if isinstance(saved, dict) and "preferred_condition" in saved else None
+
+
 def judge_pair_repeatedly(
     scenario_id: str,
     scenario_title: str,
@@ -217,31 +232,40 @@ def judge_pair_repeatedly(
     baseline_code: str,
     skill_code: str,
     judgments_dir: Path,
+    force: bool,
 ) -> list[dict]:
     """Runs every non-generating matrix model over one baseline/skill pair
     PASSES_PER_JUDGE times, writes each raw judgment to its own file, and
-    returns them all. A judge whose call fails is skipped with a stderr
-    line; the remaining passes still count."""
+    returns them all. A judgment already on disk is reused rather than
+    re-billed (pass force to redo it); a judge whose call fails is skipped
+    with a stderr line and the remaining passes still count."""
     judgments: list[dict] = []
     for judge_spec in judge_models_for(generation_slot):
         for judging_pass in range(1, PASSES_PER_JUDGE + 1):
             label = f"{scenario_id} / {generation_slot} / judge={judge_spec.slot} pass {judging_pass}"
+            out_path = judgments_dir / (
+                f"{scenario_id}__{generation_slot}__judge-{judge_spec.slot}__pass{judging_pass}.json"
+            )
+
+            saved = None if force else load_saved_judgment(out_path)
+            if saved is not None:
+                print(f"  {label}: reusing saved judgment")
+                judgments.append(saved)
+                continue
+
             try:
                 judgment = judge_pair(scenario_title, baseline_code, skill_code, judge_spec)
             except ModelCallError as error:
                 print(f"  SKIPPED {label}: {error}", file=sys.stderr)
                 continue
 
-            out_path = judgments_dir / (
-                f"{scenario_id}__{generation_slot}__judge-{judge_spec.slot}__pass{judging_pass}.json"
-            )
             out_path.write_text(json.dumps(judgment, indent=2), encoding="utf-8")
             print(f"  {label}: preferred {judgment['preferred_condition'] or 'no_verdict'}")
             judgments.append(judgment)
     return judgments
 
 
-def run_judging(run_dir: Path) -> dict:
+def run_judging(run_dir: Path, force: bool) -> dict:
     scenarios_by_id = {s.id: s for s in load_all_scenarios()}
     judgments_dir = run_dir / "judgments"
     judgments_dir.mkdir(parents=True, exist_ok=True)
@@ -274,6 +298,7 @@ def run_judging(run_dir: Path) -> dict:
                 baseline_code,
                 skill_code,
                 judgments_dir,
+                force,
             )
             for judgment in judgments:
                 verdict = judgment["preferred_condition"] or "no_verdict"
@@ -297,6 +322,12 @@ def main() -> int:
         default=None,
         help="seed for A/B order randomization (for a reproducible re-run)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="re-run judgments that are already saved (default: reuse them, so an "
+        "interrupted judging pass resumes without re-billing)",
+    )
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -306,7 +337,7 @@ def main() -> int:
     if not (run_dir / "raw").is_dir():
         parser.error(f"{run_dir} has no raw/ directory -- run run_bench.py first")
 
-    outcome = run_judging(run_dir)
+    outcome = run_judging(run_dir, args.force)
     counts = outcome["preference_counts"]
     rubric_means = outcome["rubric_means"]
 

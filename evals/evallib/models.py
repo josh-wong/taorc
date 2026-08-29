@@ -5,6 +5,8 @@ raw text response. There is no shared SDK dependency here on purpose --
 each provider's wire format is small enough that a stdlib `urllib` request
 is less to maintain than an extra pinned dependency per provider, and it
 keeps every HTTP call inspectable in one place when a run needs debugging.
+Transient failures (timeouts, 429/5xx) are retried with backoff in
+_post_json so one slow generation doesn't silently shrink a paid run.
 
 Which model plays which of the three matrix slots (Claude / GPT / Qwen) is
 a repo decision, not a per-run flag -- see MODEL_MATRIX below and design
@@ -15,15 +17,33 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
 REQUEST_TIMEOUT_SECS = 120
 
+# A run is paid work: a transient 429/503 or a slow generation that trips the
+# timeout should cost a few retries, not a silently dropped cell and a
+# shrunken sample. Non-transient failures (auth, a 400 on a bad parameter)
+# still fail on the first try -- retrying them just wastes minutes.
+MAX_ATTEMPTS = 4
+RETRY_BACKOFF_SECS = 4
+RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
 
 class ModelCallError(RuntimeError):
     """Raised when a provider call can't be made or fails outright."""
+
+
+class _TransientCallError(Exception):
+    """Internal: a failure worth retrying. Never escapes this module -- once
+    the attempts are spent it is re-raised as a ModelCallError."""
+
+    def __init__(self, message: str, retry_after: str | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 # Every provider signals "I hit the token cap mid-answer" with one of these
@@ -121,17 +141,50 @@ def _require_api_key(spec: ModelSpec) -> str:
     return api_key
 
 
+def _retry_delay_secs(attempt: int, retry_after: str | None) -> float:
+    """Exponential backoff (4s, 8s, 16s ...), overridden upward by a
+    server-supplied Retry-After when the 429/503 carried a parseable one."""
+    backoff = RETRY_BACKOFF_SECS * (2 ** (attempt - 1))
+    if retry_after:
+        try:
+            return max(backoff, float(retry_after))
+        except ValueError:
+            pass
+    return backoff
+
+
+def _read_response_once(request: urllib.request.Request, url: str) -> bytes:
+    try:
+        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECS) as response:
+            return response.read()
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        if error.code in RETRYABLE_STATUS:
+            raise _TransientCallError(
+                f"HTTP {error.code} from {url}: {detail}",
+                retry_after=error.headers.get("Retry-After"),
+            ) from error
+        raise ModelCallError(f"HTTP {error.code} from {url}: {detail}") from error
+    except (urllib.error.URLError, TimeoutError) as error:
+        # A bare urlopen timeout raises TimeoutError, not a URLError, so both
+        # are caught here; a DNS or connection-refused failure is a URLError.
+        reason = getattr(error, "reason", error)
+        raise _TransientCallError(f"could not reach {url}: {reason}") from error
+
+
 def _post_json(url: str, headers: dict[str, str], payload: dict) -> dict:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECS) as response:
-            raw_body = response.read()
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")
-        raise ModelCallError(f"HTTP {error.code} from {url}: {detail}") from error
-    except urllib.error.URLError as error:
-        raise ModelCallError(f"could not reach {url}: {error.reason}") from error
+
+    raw_body = b""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            raw_body = _read_response_once(request, url)
+            break
+        except _TransientCallError as error:
+            if attempt == MAX_ATTEMPTS:
+                raise ModelCallError(f"{error} (gave up after {MAX_ATTEMPTS} attempts)") from error
+            time.sleep(_retry_delay_secs(attempt, error.retry_after))
 
     # A 200 status doesn't guarantee a well-formed body -- a proxy in front
     # of the real provider can return an HTML error page or a truncated
