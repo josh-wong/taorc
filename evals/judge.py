@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """LLM-judge scoring track (design doc §10.2, PRD M2).
 
-For every scenario/model pair, asks a judge model to blindly compare the
-baseline and skill-enabled completions on one question -- "which would take
-a new reader less time to understand" -- with left/right order randomized
-so position can't leak which condition is which, plus a 1-5 score for each
-version on every catalog category (N/C/F/S/T). Every raw judgment is written
-to evals/results/<run>/judgments/ so a published number can be traced back
-to the exact prompt and response that produced it (R7.4); the per-category
-scores are aggregated into a skill-vs-baseline delta in judge_summary.json.
+For every scenario/model pair, asks the two other matrix models to blindly
+compare the baseline and skill-enabled completions on one question -- "which
+would take a new reader less time to understand" -- with left/right order
+randomized so position can't leak which condition is which, plus a 1-5 score
+for each version on every catalog category (N/C/F/S/T). Each judge runs
+PASSES_PER_JUDGE times, for ~120 judge calls per full run (design doc
+§10.3). Every raw judgment is written to evals/results/<run>/judgments/ so a
+published number can be traced back to the exact prompt and response that
+produced it (R7.4); the preference counts and the per-category
+skill-vs-baseline delta are aggregated into judge_summary.json.
 
 The judge model is never the same model that generated the pair (§10.2), to
 reduce self-preference bias -- see judge_model_for() below.
@@ -54,14 +56,22 @@ RUBRIC_CATEGORIES = {
 }
 
 
-def judge_model_for(generation_model_slot: str) -> ModelSpec:
-    """Picks uniformly at random among the other matrix slots, so self-
-    preference bias doesn't concentrate on whichever model happens to be
-    first in MODEL_MATRIX (design doc §10.2)."""
-    candidates = [spec for spec in MODEL_MATRIX if spec.slot != generation_model_slot]
-    if not candidates:
+# Every pair is judged by each of the other two matrix models, twice each:
+# 10 scenarios x 3 generators x 2 judges x 2 passes = ~120 judge calls, the
+# design doc §10.3 budget. Judging with both other models (rather than one
+# at random) removes the coin-flip assignment that let a single noisy
+# verdict swing M2; the repeat pass smooths within-judge variance.
+PASSES_PER_JUDGE = 2
+
+
+def judge_models_for(generation_model_slot: str) -> list[ModelSpec]:
+    """Every matrix slot except the one that generated the pair, so no
+    model ever judges its own output (design doc §10.2) and self-preference
+    bias can't concentrate on whichever model is first in MODEL_MATRIX."""
+    other_models = [spec for spec in MODEL_MATRIX if spec.slot != generation_model_slot]
+    if not other_models:
         raise ValueError("MODEL_MATRIX needs at least two models for judging")
-    return random.choice(candidates)
+    return other_models
 
 
 def build_judge_prompt(task_title: str, version_a: str, version_b: str) -> str:
@@ -179,7 +189,9 @@ def summarize_rubric(rubric_samples: dict[str, dict[str, list[int]]]) -> dict:
     baseline delta -- the per-category signal design doc §10.2 asks for, so
     a run says which axis the skill moves rather than only the overall
     preference. A category is reported only where both conditions have at
-    least one score, so the delta always compares like with like."""
+    least one score, so the delta always compares like with like. n is the
+    judgment count, not the pair count -- each pair is judged several times
+    (see PASSES_PER_JUDGE)."""
     summary = {}
     for letter, name in RUBRIC_CATEGORIES.items():
         skill_scores = rubric_samples["skill"][letter]
@@ -193,9 +205,40 @@ def summarize_rubric(rubric_samples: dict[str, dict[str, list[int]]]) -> dict:
             "skill_mean": round(skill_mean, 2),
             "baseline_mean": round(baseline_mean, 2),
             "delta": round(skill_mean - baseline_mean, 2),
-            "pairs_scored": min(len(skill_scores), len(baseline_scores)),
+            "judgments_scored": min(len(skill_scores), len(baseline_scores)),
         }
     return summary
+
+
+def judge_pair_repeatedly(
+    scenario_id: str,
+    scenario_title: str,
+    generation_slot: str,
+    baseline_code: str,
+    skill_code: str,
+    judgments_dir: Path,
+) -> list[dict]:
+    """Runs every non-generating matrix model over one baseline/skill pair
+    PASSES_PER_JUDGE times, writes each raw judgment to its own file, and
+    returns them all. A judge whose call fails is skipped with a stderr
+    line; the remaining passes still count."""
+    judgments: list[dict] = []
+    for judge_spec in judge_models_for(generation_slot):
+        for judging_pass in range(1, PASSES_PER_JUDGE + 1):
+            label = f"{scenario_id} / {generation_slot} / judge={judge_spec.slot} pass {judging_pass}"
+            try:
+                judgment = judge_pair(scenario_title, baseline_code, skill_code, judge_spec)
+            except ModelCallError as error:
+                print(f"  SKIPPED {label}: {error}", file=sys.stderr)
+                continue
+
+            out_path = judgments_dir / (
+                f"{scenario_id}__{generation_slot}__judge-{judge_spec.slot}__pass{judging_pass}.json"
+            )
+            out_path.write_text(json.dumps(judgment, indent=2), encoding="utf-8")
+            print(f"  {label}: preferred {judgment['preferred_condition'] or 'no_verdict'}")
+            judgments.append(judgment)
+    return judgments
 
 
 def run_judging(run_dir: Path) -> dict:
@@ -223,21 +266,19 @@ def run_judging(run_dir: Path) -> dict:
 
             baseline_code = extract_code(baseline_path.read_text(encoding="utf-8"))
             skill_code = extract_code(skill_path.read_text(encoding="utf-8"))
-            judge_spec = judge_model_for(model_dir.name)
 
-            try:
-                judgment = judge_pair(scenario.title, baseline_code, skill_code, judge_spec)
-            except ModelCallError as error:
-                print(f"  SKIPPED {scenario.id} / {model_dir.name}: {error}", file=sys.stderr)
-                continue
-
-            verdict = judgment["preferred_condition"] or "no_verdict"
-            preference_counts[verdict] += 1
-            accumulate_rubric(rubric_samples, judgment["rubric_by_condition"])
-
-            out_path = judgments_dir / f"{scenario.id}__{model_dir.name}.json"
-            out_path.write_text(json.dumps(judgment, indent=2), encoding="utf-8")
-            print(f"  {scenario.id} / {model_dir.name}: judge preferred {verdict}")
+            judgments = judge_pair_repeatedly(
+                scenario.id,
+                scenario.title,
+                model_dir.name,
+                baseline_code,
+                skill_code,
+                judgments_dir,
+            )
+            for judgment in judgments:
+                verdict = judgment["preferred_condition"] or "no_verdict"
+                preference_counts[verdict] += 1
+                accumulate_rubric(rubric_samples, judgment["rubric_by_condition"])
 
     return {
         "preference_counts": preference_counts,
@@ -276,13 +317,16 @@ def main() -> int:
     decided = counts["skill"] + counts["baseline"]
     if decided:
         skill_preference_pct = round(counts["skill"] / decided * 100, 1)
-        print(f"skill preferred in {skill_preference_pct}% of decided pairs (M2 target >= 70%)")
+        print(
+            f"skill preferred in {skill_preference_pct}% of {decided} decided "
+            "judgments (M2 target >= 70%)"
+        )
     print(f"counts: {counts}")
     for letter, means in rubric_means.items():
         print(
             f"  rubric {letter} ({means['category']}): skill {means['skill_mean']} vs "
             f"baseline {means['baseline_mean']} (delta {means['delta']:+g}, "
-            f"n={means['pairs_scored']})"
+            f"n={means['judgments_scored']})"
         )
     return 0
 
