@@ -232,9 +232,19 @@ Target: **≥ 70%.**
 
 | Grouping | Skill preferred | Rate | 2026-08-29 |
 | -------- | --------------- | ---- | ---------- |
-| **overall** | **28 / 40** | **70.0%** — pass | 45.0% |
+| **overall, as run** | **28 / 40** | **70.0%** — pass | 45.0% |
+| **overall, undecidable pairs excluded** | **26 / 36** | **72.2%** — pass | 45.0% |
 | claude-generated pairs (judge: gpt-5.1) | 15 / 20 | 75.0% | 50.0% |
 | gpt-generated pairs (judge: claude-opus-5) | 13 / 20 | 65.0% | 40.0% |
+
+The second row is the honest one. `02-fix-bug` leaves byte-identical files in
+both conditions on both slots, so its four judgments cannot express a
+preference about the skill — yet the judge was asked anyway and answered
+anyway, all four times picking whichever side was labelled A. Those four came
+in 2 skill / 2 baseline and were counted as decided. `judge.py` now detects an
+identical pair, records it as undecidable, and does not bill the call, so a
+future run reports 26 / 36 directly. Both figures are given here because the
+committed `judgments/` were produced before that change.
 
 Per pair (skill wins / 2 judgments), against the baseline run re-judged under
 the same fixed judge:
@@ -242,7 +252,7 @@ the same fixed judge:
 | Scenario | claude | gpt |
 | -------- | ------ | --- |
 | 01-implement-function | 2/2 → 2/2 | 0/2 → 0/2 |
-| 02-fix-bug | 1/2 → 1/2 | 1/2 → 1/2 |
+| 02-fix-bug (undecidable, see above) | 1/2 → 1/2 | 1/2 → 1/2 |
 | 03-add-feature | 0/2 → **2/2** | 2/2 → 2/2 |
 | 04-write-tests | 1/2 → **0/2** | 2/2 → **1/2** |
 | 05-parse-transform | 2/2 → 2/2 | 0/2 → **2/2** |
@@ -265,18 +275,28 @@ Seven pairs improved, two regressed, eleven held.
 | T (tests, n = 4) | 4.25 | 4.50 | **−0.25** | +0.00 |
 
 C was the category the tuning targeted and it moved the most, from −0.23 to
-+0.38. T is the only category still negative, and it is the only one that got
-worse.
++0.38. T is the only category still negative.
 
-### The one regression: `04-write-tests`
+N, C and F clear the ±0.1–0.25 re-judging noise floor measured in [the judge
+fragment fix](#the-judge-fragment-fix-moved-no-verdict-on-the-two-judgments-that-tested-it).
+S (+0.12) and T (−0.25) do not, and T is the category whose own drift under
+re-judging was 0.25 — exactly the size of the delta reported here. Treat both
+as unresolved rather than as movement.
+
+### The one candidate regression: `04-write-tests`
 
 Both slots lost a judgment on the test-writing scenario, and T is the only
-negative rubric delta. The cause is coverage, not readability. The skill's
-claude output writes 6 tests where the baseline writes 11, dropping the
-cap-equals-discount boundary, the zero-cap case, and the
-validation-happens-before-capping case. Its test *names* are better — every one
-states a scenario and an outcome (`T3`) — but a judge comparing the two files
-sees fewer behaviors pinned down.
+negative rubric delta — though at n = 4 judgments, and at the exact magnitude
+of T's own re-judging drift, the rubric number alone would not be worth
+acting on. What makes it worth writing up is the lost judgments on both slots
+and a mechanism visible in the files themselves.
+
+The cause is coverage, not readability. The skill's claude output defines 5
+test functions to the baseline's 11; counting parametrized cases rather than
+definitions, 6 to 14. It drops the cap-equals-discount boundary, the zero-cap
+case, and the validation-happens-before-capping case. Its test *names* are
+better — every one states a scenario and an outcome (`T3`) — but a judge
+comparing the two files sees fewer behaviors pinned down.
 
 Nothing in the tuning targeted test volume. The likely cause is the general
 brevity pressure the skill applies (`X1`, `P2`, and the shorter files it
@@ -287,17 +307,20 @@ tuning cycle and is filed under [Known gaps](#known-gaps).
 
 ### Reading M2
 
-70.0% is a pass and should be read as exactly that — a pass, on the line, not
-a comfortable margin.
+70.0% as run, 72.2% with the undecidable judgments removed. Either is a pass,
+and both should be read as exactly that — a pass, near the line, not a
+comfortable margin.
 
-- **The effective sample is ~20, not 40.** The two passes agree on 16 of 20
-  pairs, so the judgments are not 40 independent draws. At n ≈ 20 the interval
-  around 70% is wide; one pair flipping moves the headline by 5pp.
-- **Four pairs are near-coin-flips by construction.** `02-fix-bug` on both
-  slots produces byte-identical code in both conditions, so those judgments
-  cannot express a preference about the skill at all. They came in at 1/2 and
-  1/2, which is what a tie should look like, and they cap the achievable rate
-  below 100%.
+- **The effective sample is ~18, not 40.** The two passes agree on 16 of 20
+  pairs, so the judgments are not 40 independent draws, and two of the 20
+  pairs are undecidable. At n ≈ 18 the interval around 70% is wide; one pair
+  flipping moves the headline by ~6pp.
+- **Four judgments were coin flips scored as preferences.** `02-fix-bug` on
+  both slots produces byte-identical code in both conditions, so those
+  judgments cannot express a preference about the skill at all. All four
+  picked the side labelled A. They split 2/2 by luck of the A/B draw, which
+  flattered nothing here but could have swung the headline 5pp either way.
+  Excluding them is what takes 70.0% to 72.2%.
 - **Position bias is present but balanced.** The judge chose "A" in 22 of 40
   judgments, and the skill was labeled A in exactly 20 of 40, so the bias does
   not favor either condition.
@@ -305,7 +328,7 @@ a comfortable margin.
   improving and two regressing is not a resampling artifact, even if the exact
   70.0% is.
 
-### The judge fragment fix changed nothing, and that is a published result
+### The judge fragment fix moved no verdict, on the two judgments that tested it
 
 `judge.py` was fed `extract_code()` output directly, so a completion that
 returned only the function it changed — what `X1` asks for on an edit task —
@@ -317,16 +340,42 @@ That was fixed in this change set (`code_as_left_on_disk`, reusing
 re-judged under it into `judgments-fixed/` and `judge_summary-fixed.json`,
 which are committed alongside the originals.
 
-**The result: not one verdict moved. M2 was 45.0% (18/40) either way** —
-including `03-add-feature`/claude, the pair the confound was most obviously
-distorting, which stayed 0/2 even when judged as a full 28-line file. The
-rubric means did shift (C −0.32 → −0.23, N −0.12 → −0.03, S −0.08 → +0.05), so
-both sets are published rather than one replacing the other.
+**Not one verdict moved: M2 was 45.0% (18/40) either way.** But that is a much
+weaker result than it first reads as, and the earlier framing of it here
+("changed nothing, and that is a published result") over-claimed on two
+counts.
 
-Two things follow. The confound was real but was not what held M2 down, which
-is worth knowing before anyone spends another cycle there. And because the
-measurement change moves the baseline by exactly zero, the 45.0% → 70.0% move
-in this run is attributable to the tuning and not to the fix.
+**The fix was barely exercised.** Only 1 of the 40 completions in that run is
+actually altered by the splice — `03-add-feature`/claude/skill, 6 lines → 28.
+The other 39 reach the judge byte-identical to before, because they already
+echoed the whole file. So the fix was tested on 2 of 40 judgments, not run
+wide, and "no verdict moved" is a statement about that one pair, which stayed
+0/2. It does not establish that fragment-splicing is inconsequential in
+general; it establishes that on this run there was almost nothing to splice.
+
+**The rubric shift is re-sampling noise, not the fix.** Re-judging changed
+rubric scores on **29 of 40 judgments** while only 2 had different inputs.
+Whatever moved C from −0.32 to −0.23 was therefore mostly the judge answering
+a second time, not the reconstruction. That puts a usable noise floor on this
+harness:
+
+| Category | delta, first judging | delta, re-judged | drift |
+| -------- | -------------------- | ---------------- | ----- |
+| N | −0.12 | −0.03 | 0.09 |
+| C | −0.32 | −0.23 | 0.09 |
+| F | +0.05 | −0.05 | 0.10 |
+| S | −0.08 | +0.05 | 0.13 |
+| T | −0.25 | +0.00 | 0.25 |
+
+**Read every rubric delta in this document against that ±0.1–0.25 band.** The
+C (+0.38), N (+0.28) and F (+0.33) moves in this run clear it. S (+0.12) and T
+(−0.25) do not: both sit inside the noise the same judge produces answering
+the same question twice.
+
+One conclusion does survive. The fragment confound was real, is fixed, and was
+not what held M2 down — and because the measurement change moves the baseline
+by exactly zero, the 45.0% → 70.0% move is attributable to the tuning rather
+than to the fix.
 
 ## Trigger suite (M4)
 
@@ -363,7 +412,7 @@ it one slot.
 | Metric | Target | 2026-08-29 | 2026-09-01 | Status |
 | ------ | ------ | ---------- | ---------- | ------ |
 | M1 — lint reduction, skill vs. baseline | ≥ 60% | −84.9% pooled | **−79.1% pooled** (claude −70.9%, gpt −100.0%) | **pass** pooled and on claude; **gpt unvalidated** |
-| M2 — blind pairwise skill preference | ≥ 70% | 45.0% | **70.0%** (28 / 40) | **pass**, exactly on threshold |
+| M2 — blind pairwise skill preference | ≥ 70% | 45.0% | **70.0%** (28 / 40); **72.2%** (26 / 36) excluding undecidable pairs | **pass** either way, near threshold |
 | M3 — diff inflation on scenarios 02/03/09 | ≤ 10% | claude −8.5%, gpt −5.4% | **claude +0.3%, gpt −15.1%** | **pass** |
 | M4 — trigger activation / false fire | ≥ 90% / ≤ 10% | 98.3% / 0.0% | **100.0% / 0.0%** | **pass** |
 
@@ -380,12 +429,25 @@ scoped; M4 improved.
   completions, the end-to-end validation of `prompts/system-prompt.md` (design
   doc §14.3), and the second cross-judge on every pair. M2 therefore rests on a
   single judge per pair, as it did at baseline.
-- **M2 sits exactly on its threshold** at an effective n of ~20. See
+- **M2 sits near its threshold** at an effective n of ~18 — 70.0% as run,
+  72.2% with the four undecidable `02-fix-bug` judgments removed. See
   [Reading M2](#reading-m2). A confirmation run — or the `qwen` judge, which
-  would double the judgments per pair — would settle whether 70.0% is stable.
-- **`04-write-tests` regressed on both slots**, and T is the only negative
-  rubric delta. The skill trades test coverage for test-name quality. Nothing
-  in this tuning targeted it; it is the first thing to look at next.
+  would double the judgments per pair — would settle whether it is stable.
+- **The published `judgments/` predate the undecidable-pair fix.** They were
+  collected before `judge.py` learned to skip a pair whose two conditions
+  leave identical files, so the committed `judge_summary.json` still counts
+  those four coin flips as decided. The corrected figure is computed by hand
+  in the M2 section; the JSON is left as it was collected.
+- **Rubric deltas under ±0.25 are not distinguishable from re-judging noise.**
+  Measured on the 2026-08-29 re-judging, where 29 of 40 judgments changed
+  rubric scores with only 2 changed inputs. This run's S (+0.12) and T (−0.25)
+  are inside that band; N, C and F are outside it. The harness needs more
+  passes per judge before a delta that size means anything.
+- **`04-write-tests` lost a judgment on both slots**, and T is the only
+  negative rubric delta — though the delta itself is within the noise floor
+  above. The file-level mechanism is real: the skill trades test coverage for
+  test-name quality. Nothing in this tuning targeted it; it is the first thing
+  to look at next, and the first thing to re-measure with more passes.
 - **M1 counts findings inherited from the starter**, so it rewards breaching
   `X2`/`X3` on edit tasks. Two of the claude slot's three remaining findings
   are this artifact. Worth a scorer fix so the metric measures what the

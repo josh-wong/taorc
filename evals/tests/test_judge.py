@@ -7,6 +7,10 @@ model happened to print. Without it, following X1 on an edit task makes a
 completion look shorter than its rival for reasons that have nothing to do
 with readability.
 
+Also covers starter_to_splice_onto, which decides where that reconstruction
+is safe to apply at all -- a splice cannot express a deletion, so a
+removal-shaped scenario must be judged as written.
+
 Uses stdlib unittest to match the rest of this repo's tests (see
 evals/tests/test_score.py).
 """
@@ -21,7 +25,8 @@ from pathlib import Path
 EVALS_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(EVALS_ROOT))
 
-from judge import code_as_left_on_disk  # noqa: E402
+from evallib.scenarios import load_all_scenarios  # noqa: E402
+from judge import code_as_left_on_disk, starter_to_splice_onto  # noqa: E402
 
 CART_STARTER = '''\
 """Shopping cart."""
@@ -85,6 +90,61 @@ class CodeAsLeftOnDiskTest(unittest.TestCase):
         judged = code_as_left_on_disk(self.completion_file(from_scratch), ".py", None)
 
         self.assertEqual(judged, from_scratch)
+
+
+SLOP_STARTER = '''\
+"""Report builder."""
+
+
+def helper_slop(rows):
+    # Step 1: do the thing
+    return [row for row in rows if row]
+
+
+def summarize(rows):
+    return len(helper_slop(rows))
+'''
+
+DELETION_COMPLETION = '''\
+Removed the pointless helper and its narration.
+
+```python
+def summarize(rows):
+    return len([row for row in rows if row])
+```
+'''
+
+
+class StarterToSpliceOntoTest(unittest.TestCase):
+    def setUp(self):
+        self.scenarios = {s.id: s for s in load_all_scenarios()}
+
+    def test_additive_edit_scenario_splices_onto_its_starter(self):
+        starter = starter_to_splice_onto(self.scenarios["03-add-feature"])
+
+        self.assertIsNotNone(starter)
+
+    def test_deletion_scenario_is_judged_as_written_not_spliced(self):
+        self.assertIsNone(starter_to_splice_onto(self.scenarios["10-de-slop"]))
+
+    def test_from_scratch_scenario_has_nothing_to_splice_onto(self):
+        self.assertIsNone(starter_to_splice_onto(self.scenarios["01-implement-function"]))
+
+    def test_splicing_a_deletion_would_restore_the_deleted_code(self):
+        """Why the gate above exists: reconstruct_edited_file has no way to
+        express a removed definition, so splicing a de-slop completion hands
+        the judge back the slop the completion correctly deleted."""
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        completion = Path(scratch.name) / "completion.py"
+        completion.write_text(DELETION_COMPLETION, encoding="utf-8")
+
+        spliced = code_as_left_on_disk(completion, ".py", SLOP_STARTER)
+        as_written = code_as_left_on_disk(completion, ".py", None)
+
+        self.assertIn("def helper_slop", spliced)
+        self.assertIn("# Step 1: do the thing", spliced)
+        self.assertNotIn("def helper_slop", as_written)
 
 
 if __name__ == "__main__":
