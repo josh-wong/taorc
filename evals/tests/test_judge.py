@@ -17,16 +17,19 @@ evals/tests/test_score.py).
 
 from __future__ import annotations
 
+import dataclasses
+import io
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 
 EVALS_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(EVALS_ROOT))
 
 from evallib.scenarios import load_all_scenarios  # noqa: E402
-from judge import code_as_left_on_disk, starter_to_splice_onto  # noqa: E402
+from judge import code_as_left_on_disk, run_judging, starter_to_splice_onto  # noqa: E402
 
 CART_STARTER = '''\
 """Shopping cart."""
@@ -177,6 +180,18 @@ class StarterToSpliceOntoTest(unittest.TestCase):
     def test_from_scratch_scenario_has_nothing_to_splice_onto(self):
         self.assertIsNone(starter_to_splice_onto(self.scenarios["01-implement-function"]))
 
+    def test_measured_scenario_with_no_matching_starter_warns_before_judging_as_written(self):
+        renamed = dataclasses.replace(
+            self.scenarios["03-add-feature"], output_file="renamed_by_mistake.py"
+        )
+        warnings = io.StringIO()
+
+        with redirect_stderr(warnings):
+            starter = starter_to_splice_onto(renamed)
+
+        self.assertIsNone(starter)
+        self.assertIn("WARNING 03-add-feature", warnings.getvalue())
+
     def test_splicing_a_deletion_would_restore_the_deleted_code(self):
         """Why the gate above exists: reconstruct_edited_file has no way to
         express a removed definition, so splicing a de-slop completion hands
@@ -192,6 +207,34 @@ class StarterToSpliceOntoTest(unittest.TestCase):
         self.assertIn("def helper_slop", spliced)
         self.assertIn("# Step 1: do the thing", spliced)
         self.assertNotIn("def helper_slop", as_written)
+
+
+class UndecidablePairTest(unittest.TestCase):
+    def test_leftover_judgment_files_for_a_skipped_pair_are_named_in_the_summary(self):
+        """Skipping a pair leaves the summary counting fewer judgments than
+        judgments/ holds files. Without the excluded list the two artifacts
+        disagree with no marker in either, which is what R7.4 traceability
+        cannot afford."""
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        run_dir = Path(scratch.name)
+        model_dir = run_dir / "raw" / "03-add-feature" / "claude"
+        model_dir.mkdir(parents=True)
+        both_conditions_left = "def unchanged(cart):\n    return cart\n"
+        (model_dir / "baseline.py").write_text(both_conditions_left, encoding="utf-8")
+        (model_dir / "skill.py").write_text(both_conditions_left, encoding="utf-8")
+        from_an_earlier_pass = (
+            run_dir / "judgments" / "03-add-feature__claude__judge-gpt__pass1.json"
+        )
+        from_an_earlier_pass.parent.mkdir(parents=True)
+        from_an_earlier_pass.write_text("{}", encoding="utf-8")
+
+        outcome = run_judging(run_dir, force=False, seed=None, label=None)
+
+        self.assertEqual(outcome["undecidable_pairs"], ["03-add-feature/claude"])
+        self.assertEqual(outcome["excluded_judgment_files"], [from_an_earlier_pass.name])
+        self.assertTrue(from_an_earlier_pass.exists())
+        self.assertEqual(outcome["preference_counts"]["skill"], 0)
 
 
 if __name__ == "__main__":

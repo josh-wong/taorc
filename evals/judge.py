@@ -334,10 +334,23 @@ def starter_to_splice_onto(scenario: Scenario) -> str | None:
 
     Read the coupling as: splice only where the task is purely additive.
     A scenario that gains measure_diff_size must be additive anyway, since M3
-    counts diff lines against the same reconstruction."""
+    counts diff lines against the same reconstruction.
+
+    Returns None with a warning when measure_diff_size is set but no starter
+    matches output_file: the pair is still judged, as printed, so the silent
+    reading would be that this scenario's M2 number means what the spliced
+    ones mean. score.py warns on the same mismatch (#30)."""
     if not scenario.measure_diff_size:
         return None
-    return starter_for_output_file(scenario)
+    starter_before = starter_for_output_file(scenario)
+    if starter_before is None:
+        print(
+            f"  WARNING {scenario.id}: measure_diff_size is set but no starter file "
+            f"matches output_file {scenario.output_file!r} -- judging both completions "
+            "as printed, so this pair's judgments carry the output-format confound",
+            file=sys.stderr,
+        )
+    return starter_before
 
 
 def code_as_left_on_disk(
@@ -391,6 +404,7 @@ def run_judging(run_dir: Path, force: bool, seed: int | None, label: str | None)
         "baseline": {letter: [] for letter in RUBRIC_CATEGORIES},
     }
     undecidable_pairs: list[str] = []
+    excluded_judgment_files: list[str] = []
     raw_dir = run_dir / "raw"
 
     for scenario_dir in sorted(raw_dir.iterdir()):
@@ -417,6 +431,20 @@ def run_judging(run_dir: Path, force: bool, seed: int | None, label: str | None)
             # judgments it would have drawn depends on which judges answer.
             if baseline_code == skill_code:
                 undecidable_pairs.append(f"{scenario.id}/{model_dir.name}")
+                # Judgments this pair drew before it became undecidable stay on
+                # disk -- they are real records of calls that were made, and
+                # R7.4 traceability is worse served by deleting evidence than
+                # by a summary that counts fewer judgments than judgments/
+                # holds files. Naming them is what keeps the two artifacts from
+                # disagreeing silently (#30).
+                excluded_judgment_files.extend(
+                    sorted(
+                        path.name
+                        for path in judgments_dir.glob(
+                            f"{scenario.id}__{model_dir.name}__*.json"
+                        )
+                    )
+                )
                 print(
                     f"  {scenario.id} / {model_dir.name}: both conditions left the "
                     "same file -- undecidable, not judged and not billed"
@@ -442,6 +470,7 @@ def run_judging(run_dir: Path, force: bool, seed: int | None, label: str | None)
         "preference_counts": preference_counts,
         "rubric_means": summarize_rubric(rubric_samples),
         "undecidable_pairs": undecidable_pairs,
+        "excluded_judgment_files": excluded_judgment_files,
     }
 
 
@@ -498,6 +527,14 @@ def main() -> int:
         print(
             f"{len(undecidable_pairs)} pair(s) not judged, both conditions left the "
             f"same file: {', '.join(undecidable_pairs)}"
+        )
+    excluded_judgment_files = outcome["excluded_judgment_files"]
+    if excluded_judgment_files:
+        print(
+            f"{len(excluded_judgment_files)} judgment file(s) from an earlier pass "
+            f"belong to those pairs and stay in {judgments_dir_for(run_dir, args.label).name}/ "
+            "without being counted; they are listed in the summary as "
+            "excluded_judgment_files"
         )
     for letter, means in rubric_means.items():
         print(
