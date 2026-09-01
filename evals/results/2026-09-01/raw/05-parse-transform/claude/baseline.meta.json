@@ -1,0 +1,14 @@
+{
+  "scenario_id": "05-parse-transform",
+  "model_slot": "claude",
+  "model_id": "claude-opus-5",
+  "provider": "anthropic",
+  "condition": "baseline",
+  "skill_artifact": null,
+  "sampler": {
+    "max_tokens": 4000,
+    "temperature": "model default (override rejected by API)",
+    "top_p": "model default (override rejected by API)"
+  },
+  "generated_at": "2026-08-29T09:40:22.844196+00:00"
+}

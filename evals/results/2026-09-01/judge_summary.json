@@ -1,0 +1,44 @@
+{
+  "preference_counts": {
+    "skill": 28,
+    "baseline": 12,
+    "no_verdict": 0
+  },
+  "rubric_means": {
+    "N": {
+      "category": "naming",
+      "skill_mean": 4.65,
+      "baseline_mean": 4.38,
+      "delta": 0.28,
+      "judgments_scored": 40
+    },
+    "C": {
+      "category": "comments",
+      "skill_mean": 4.38,
+      "baseline_mean": 4.0,
+      "delta": 0.38,
+      "judgments_scored": 40
+    },
+    "F": {
+      "category": "control flow and structure",
+      "skill_mean": 4.65,
+      "baseline_mean": 4.33,
+      "delta": 0.33,
+      "judgments_scored": 40
+    },
+    "S": {
+      "category": "structure and decomposition",
+      "skill_mean": 4.45,
+      "baseline_mean": 4.33,
+      "delta": 0.12,
+      "judgments_scored": 40
+    },
+    "T": {
+      "category": "test quality (if tests are present, otherwise omit)",
+      "skill_mean": 4.25,
+      "baseline_mean": 4.5,
+      "delta": -0.25,
+      "judgments_scored": 4
+    }
+  }
+}

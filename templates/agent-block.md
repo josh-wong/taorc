@@ -14,6 +14,8 @@ first existing path wins—`.claude/skills/readable-code/SKILL.md`,
 - Handle the trivial or invalid case first and return immediately. (F2, F5)
 - Treat one more level of nesting as a signal to restructure. (F6)
 - Name a subexpression when a condition runs past three terms. (E1)
+- Inline a name used once that says no more than the expression it replaced. (V1)
+- For a function you add, say what it returns on empty or boundary input and when it raises. (C14)
 - One task per block. If describing it needs "and", split it. (S3)
 - Test names say the scenario and the expected result. (T3)
 
@@ -21,6 +23,6 @@ first existing path wins—`.claude/skills/readable-code/SKILL.md`,
 
 - Widen the diff to satisfy a readability rule. Mention it instead. (X1)
 - Override a project's existing vocabulary or conventions with these. (X2)
-- Rename a public or exported symbol unless asked. (X3)
+- Rename a public or exported symbol, a parameter name included, unless asked. (X3)
 - Mix a readability change and a behavior change in one step. (X4)
 - Argue with the formatter. It wins. (X5)
