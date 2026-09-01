@@ -84,16 +84,19 @@ EMPTY_WORD_PATTERN = load_empty_word_pattern()
 def extract_code(completion_text: str, output_suffix: str = "") -> str:
     """A raw completion is often prose plus one or more fenced code blocks.
     Prefer the largest block whose fence language matches the scenario's
-    output file; fall back to the largest block of any language; if the
-    model returned bare code with no fence at all, score the whole
-    response."""
+    output file; with no such block, prefer the largest *untagged* fence (a
+    real answer the model left untagged) over a tagged prose block like
+    ```text; fall back to the largest block of any language; if the model
+    returned bare code with no fence at all, score the whole response."""
     blocks = CODE_FENCE_PATTERN.findall(completion_text)
     if not blocks:
         return completion_text
     wanted_langs = FENCE_LANGS_FOR_SUFFIX.get(output_suffix.lower(), set())
     same_language_blocks = [body for lang, body in blocks if lang.lower() in wanted_langs]
-    candidates = same_language_blocks or [body for _lang, body in blocks]
-    return max(candidates, key=len)
+    if same_language_blocks:
+        return max(same_language_blocks, key=len)
+    untagged_blocks = [body for lang, body in blocks if lang == ""]
+    return max(untagged_blocks or [body for _lang, body in blocks], key=len)
 
 
 def count_loc(code: str) -> int:
