@@ -375,6 +375,13 @@ class ExtractCodeTest(unittest.TestCase):
         )
         self.assertEqual(extract_code(completion, ".py").strip(), "x = 1")
 
+    def test_version_tagged_python_fence_is_treated_as_the_code(self):
+        completion = (
+            "Summary:\n\n```\n" + "a note about the change\n" * 5 + "```\n\n"
+            "```python3\ndef total(cart):\n    return sum(i.price for i in cart)\n```\n"
+        )
+        self.assertIn("def total(cart):", extract_code(completion, ".py"))
+
     def test_bare_code_with_no_fence_scores_the_whole_response(self):
         completion = "def total(cart):\n    return sum(item.price for item in cart)\n"
         self.assertEqual(extract_code(completion, ".py"), completion)

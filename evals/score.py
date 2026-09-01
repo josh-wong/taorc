@@ -54,7 +54,7 @@ CODE_FENCE_PATTERN = re.compile(r"```([\w+-]*)\n(.*?)```", re.DOTALL)
 # "longest fenced block" alone picks the prose. Matching the language first
 # keeps scoring on the actual code.
 FENCE_LANGS_FOR_SUFFIX = {
-    ".py": {"python", "py"},
+    ".py": {"python", "py", "python3", "py3"},
     ".ts": {"typescript", "ts"},
     ".tsx": {"tsx", "typescript"},
     ".js": {"javascript", "js"},
