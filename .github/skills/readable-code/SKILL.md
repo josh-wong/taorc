@@ -158,9 +158,9 @@ A comment's job is to carry what the code cannot.
 | `C17` | Label a mysterious function argument inline at the call site                 |
 | `C18` | Reach for an established term of art instead of describing it from scratch   |
 
-Seventeen of these eighteen rules ask you to write or sharpen a comment. Only
-`C1` deletes one. A file you left with fewer comments than you found has not
-automatically improved.
+Sixteen of these eighteen rules ask you to write or sharpen a comment. Only
+`C1` deletes one, and only `C2` trades one for a better name. A file you left
+with fewer comments than you found has not automatically improved.
 
 Control flow should read in the order the reader thinks.
 

@@ -281,18 +281,18 @@ Step 5 is load-bearing. Giving the agent a sanctioned way to *say* "I noticed `u
 
 ### 4.5 The self-check
 
-Ten questions, ordered by how often agents fail them:
+Ten questions, ordered by how often agents fail them. The shipped wording lives in `skills/readable-code/SKILL.md` and was tuned against the MS6 baseline; nothing in `validate.py` or CI compares the two, so a change there has to be mirrored here by hand.
 
-1. Does any comment restate what the line below it does? Delete it. (C1)
-2. Does any comment narrate my own plan—"Step 1", "First, we"? Delete it. (X7)
-3. Would a new reader know the unit of every number I named? (N3)
-4. Is any name an empty word—`data`, `result`—or a role word—`handler`, `manager`? (N1, N9)
+1. Does any comment restate the line below it, or narrate your plan—"Step 1", "First, we"? Delete it. (C1, X7)
+2. Is any name an empty word—`data`, `result`—or a role word—`handler`, `manager`? (N1, N9)
+3. Would a new reader know the unit of every number you named? (N3)
+4. For each function you added, can a caller tell what it returns on empty or boundary input and when it raises? Do not document one the task did not change. (C14, X1)
 5. Is any non-obvious decision left unexplained? Add the *why*. (C6)
-6. Can any nested block become a guard clause? (F5, F6)
-7. Is any boolean expression more than three terms? (E1)
-8. Does any function do more than one thing my one-sentence description can cover? (S3)
-9. Do my test names say the scenario and the expected result? (T3)
-10. Did I change anything the task did not require? (X1)
+6. Did you introduce a name used once that says no more than the expression it replaced? Inline it. (V1)
+7. Can a nested block become a guard clause, or a long condition a named one? (F5, F6, E1)
+8. Does any function do more than one thing a one-sentence description covers? (S3)
+9. Do your test names say the scenario and the expected result? (T3)
+10. Did you change anything the task did not require—a signature, a behavior, a file? (X1, X3, X4)
 
 ### 4.6 Reference loading
 

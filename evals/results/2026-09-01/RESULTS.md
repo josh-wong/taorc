@@ -38,7 +38,7 @@ slot did not run — see [Known gaps](#known-gaps).
 
 ### Baseline completions were reused, not regenerated
 
-The baseline condition does not depend on the skill, so all 40 baseline
+The baseline condition does not depend on the skill, so all 20 baseline
 completions were copied forward from `evals/results/2026-08-29/raw/` rather
 than re-billed. Their `meta.json` files still carry their original
 2026-08-29 generation timestamps, which is what makes the reuse auditable.
