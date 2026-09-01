@@ -133,9 +133,11 @@ findings ÷ total LOC).
 | gpt | 0.64 (2 / 314 LOC) | 0.00 (0 / 336) | **−100.0%** | −50.0% | pass |
 | pooled | 2.20 | 0.46 | **−79.1%** | −84.9% | pass |
 
-Both slots pass, and the `gpt` slot's baseline miss (−50.0% on n = 2) is now
-resolved at −100.0%. The `claude` slot gave up margin: −89.5% → −70.9%, three
-findings where the baseline run had one.
+Both slots pass as scored, but the `gpt` slot's −100.0% does not survive
+inspection — it rests on an `X3` breach, and the slot misses the target once
+that is corrected for. See the note below the findings table. The `claude`
+slot gave up margin honestly: −89.5% → −70.9%, three findings where the
+baseline run had one.
 
 All three are `N1` (empty-word identifier), and all three are names the skill
 is **correct** to leave alone:
@@ -148,12 +150,32 @@ is **correct** to leave alone:
 
 **This is a scorer limitation worth filing.** `taorc-lint` counts a finding
 inherited unchanged from the starter against the completion that inherited it,
-so on an edit task M1 rewards breaching `X2`/`X3`. The clearest case is
-`10-de-slop`: the 2026-08-29 `gpt` baseline renamed `data` → `items` — an `X3`
-breach on a task that said behavior must stay identical — and scored better on
-M1 for it. The tuned skill preserves the public name and takes the finding.
-Roughly two of the claude slot's three findings are this artifact rather than a
-readability regression.
+so on an edit task M1 rewards breaching `X2`/`X3`. Two of the claude slot's
+three findings are this artifact rather than a readability regression.
+
+**And the `gpt` slot's −100.0% is an instance of exactly that reward.** On
+`10-de-slop` it is the `gpt` **skill** completion that renames `data` → `items`
+(`raw/10-de-slop/gpt/skill.py:7,24`, both `process_data` and `generate_report`)
+on a task whose brief says behavior must stay identical. Both baselines and
+both claude completions keep `process_data(data)` and take the `N1` finding.
+The rename is an `X3` breach, and it is load-bearing for the headline:
+
+| `gpt` slot, M1 | Findings / LOC | Per 100 LOC | vs. baseline |
+| -------------- | -------------- | ----------- | ------------ |
+| baseline | 2 / 314 | 0.64 | — |
+| skill, as scored | 0 / 336 | 0.00 | **−100.0%** |
+| skill, had it kept the name | 1 / 336 | 0.30 | **−53.3% (miss)** |
+
+So the `gpt` slot passes M1 at −100.0% only because it broke the rule this
+run's tuning was meant to tighten. Had it complied, the slot would have missed
+the ≥ 60% target. Read the −100.0% as a scorer artifact, not as a result.
+
+This also makes the tuning's own scorecard on that item partial. The last
+self-check item was widened to cover `X1`/`X3`/`X4` precisely because of this
+scenario (see [What was changed](#what-was-changed)). It landed on the
+`raise`, which the 2026-08-29 `gpt` skill added and the 2026-09-01 one does
+not; it did not land on the parameter rename, which survived unchanged in both
+runs.
 
 ### M3 — diff-size inflation on the guardrail scenarios
 
@@ -335,18 +357,21 @@ and was **not** done for this run.
 
 ## Summary against PRD targets
 
-All four metrics meet their target.
+All four metrics meet their target as scored. M1 carries a caveat that costs
+it one slot.
 
 | Metric | Target | 2026-08-29 | 2026-09-01 | Status |
 | ------ | ------ | ---------- | ---------- | ------ |
-| M1 — lint reduction, skill vs. baseline | ≥ 60% | −84.9% pooled | **−79.1% pooled** (claude −70.9%, gpt −100.0%) | **pass**, both slots |
+| M1 — lint reduction, skill vs. baseline | ≥ 60% | −84.9% pooled | **−79.1% pooled** (claude −70.9%, gpt −100.0%) | **pass** pooled and on claude; **gpt unvalidated** |
 | M2 — blind pairwise skill preference | ≥ 70% | 45.0% | **70.0%** (28 / 40) | **pass**, exactly on threshold |
 | M3 — diff inflation on scenarios 02/03/09 | ≤ 10% | claude −8.5%, gpt −5.4% | **claude +0.3%, gpt −15.1%** | **pass** |
 | M4 — trigger activation / false fire | ≥ 90% / ≤ 10% | 98.3% / 0.0% | **100.0% / 0.0%** | **pass** |
 
-M1 gave up margin on the claude slot and gained it on `gpt`; M2 moved 25pp and
-is the reason this run exists; M3 held after the `C14` item was scoped; M4
-improved.
+M1 gave up margin on the claude slot and did not honestly gain it on `gpt` —
+correcting that slot for its `X3` breach gives −53.3% there and −72.1% pooled,
+so the pooled figure passes either way but the `gpt` slot does not. M2 moved
+25pp and is the reason this run exists; M3 held after the `C14` item was
+scoped; M4 improved.
 
 ## Known gaps
 
@@ -365,6 +390,11 @@ improved.
   `X2`/`X3` on edit tasks. Two of the claude slot's three remaining findings
   are this artifact. Worth a scorer fix so the metric measures what the
   completion introduced.
+- **The `gpt` slot's M1 pass is not real.** Its −100.0% depends on the skill
+  completion renaming a public parameter on `10-de-slop`, an `X3` breach; had
+  it complied the slot would score −53.3% against a ≥ 60% target. The `X3`
+  tightening in this run did not stop the rename. Treat `gpt` M1 as
+  unvalidated until the scorer fix above lands and the slot is re-run.
 - **Baseline completions reused from 2026-08-29** rather than regenerated, so
   the baseline column carries no fresh sampling variance. Deliberate — it
   isolates the skill-side change — but it means baseline-vs-baseline drift
