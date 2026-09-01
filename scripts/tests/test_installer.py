@@ -4,8 +4,9 @@
 Exercises scripts/install.sh and scripts/install.ps1 against temp project
 directories, using --source/-Source to point at this checkout so no network
 access is needed. Requires a real interpreter for each script under test
-(bash, pwsh) -- an interpreter that is not on PATH is skipped, not failed,
-since a given CI runner is not expected to carry both. At least one
+(bash, pwsh) -- an interpreter that is missing, or present but non-functional
+(a WSL bash stub with no distro installed), is skipped, not failed, since a
+given CI runner is not expected to carry both. At least one
 installer must run somewhere in the 3-OS matrix build-and-test.yaml defines,
 or this file would pass vacuously everywhere.
 
@@ -48,6 +49,32 @@ EXPECTED_SKILL_DIRS = [
 
 def read_version() -> str:
     return (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+
+
+def find_working_bash() -> str | None:
+    """Path to a bash that actually runs a command, or None if there isn't one.
+
+    `shutil.which("bash")` alone is not enough on GitHub's windows-latest: the
+    first bash on PATH there is the WSL launcher (C:\\Windows\\System32\\bash.exe),
+    and with no WSL distro installed on the image it exits nonzero on every
+    invocation -- so the installer tests fail instead of skipping. Probe the
+    candidate with a trivial command and treat a nonzero exit as "no bash",
+    which lets install.sh coverage fall back to the ubuntu and macos matrix
+    legs while pwsh still covers Windows.
+    """
+    bash_on_path = shutil.which("bash")
+    if not bash_on_path:
+        return None
+    try:
+        probe = subprocess.run(
+            [bash_on_path, "-c", "exit 0"], capture_output=True, timeout=30, check=False
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return bash_on_path if probe.returncode == 0 else None
+
+
+WORKING_BASH = find_working_bash()
 
 
 class InstallerCase:
@@ -141,7 +168,7 @@ class InstallerCase:
             )
 
 
-@unittest.skipUnless(shutil.which("bash"), "bash is not on PATH")
+@unittest.skipUnless(WORKING_BASH, "no working bash interpreter is available")
 class BashInstallerTest(InstallerCase, unittest.TestCase):
     def run_install(
         self, project_dir: Path, *agents: str, detect_only: bool = False
@@ -153,7 +180,7 @@ class BashInstallerTest(InstallerCase, unittest.TestCase):
 
     def _run(self, project_dir, agents, *, uninstall, detect_only) -> subprocess.CompletedProcess:
         args = [
-            "bash",
+            WORKING_BASH,
             str(REPO_ROOT / "scripts" / "install.sh"),
             "--source",
             str(REPO_ROOT),
@@ -212,9 +239,9 @@ class PowerShellInstallerTest(InstallerCase, unittest.TestCase):
 
 
 if __name__ == "__main__":
-    if not shutil.which("bash") and not shutil.which("pwsh"):
+    if not WORKING_BASH and not shutil.which("pwsh"):
         print(
-            "test_installer: neither bash nor pwsh is on PATH -- nothing to test here",
+            "test_installer: neither a working bash nor pwsh is available -- nothing to test here",
             file=sys.stderr,
         )
         sys.exit(1)
