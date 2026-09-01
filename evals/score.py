@@ -604,11 +604,14 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     return "\n".join(rebuilt) + "\n"
 
 
-def _starter_for_output_file(scenario: Scenario) -> str | None:
+def starter_for_output_file(scenario: Scenario) -> str | None:
     """The starter the completion is meant to edit -- the one whose basename
     matches output_file. `next(iter(starter_files))` would compare the model
     output against an unrelated starter on any multi-starter scenario, making
-    the M3 diff-inflation number meaningless."""
+    the M3 diff-inflation number meaningless.
+
+    judge.py imports this alongside reconstruct_edited_file so both scoring
+    tracks splice a fragment onto the same starter."""
     output_name = Path(scenario.output_file).name
     for relative_path, content in scenario.starter_files.items():
         if Path(relative_path).name == output_name:
@@ -640,7 +643,7 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
     }
 
     if scenario.measure_diff_size:
-        starter_before = _starter_for_output_file(scenario)
+        starter_before = starter_for_output_file(scenario)
         if starter_before is None:
             print(
                 f"  WARNING {scenario.id}: measure_diff_size is set but no starter "

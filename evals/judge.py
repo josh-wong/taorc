@@ -41,7 +41,11 @@ from evallib.models import (  # noqa: E402
 )
 from evallib.scenarios import load_all_scenarios  # noqa: E402
 from run_bench import output_extension  # noqa: E402
-from score import extract_code  # noqa: E402
+from score import (  # noqa: E402
+    extract_code,
+    reconstruct_edited_file,
+    starter_for_output_file,
+)
 
 JUDGE_SYSTEM_PROMPT = (
     "You are judging two versions of the same piece of code for one thing "
@@ -312,9 +316,40 @@ def judge_pair_repeatedly(
     return judgments
 
 
-def run_judging(run_dir: Path, force: bool, seed: int | None) -> dict:
+def code_as_left_on_disk(
+    completion_path: Path, completion_ext: str, starter_before: str | None
+) -> str:
+    """The file a judge should read: the starter as this completion leaves it.
+
+    Without this the judge compares whatever each model chose to print, so a
+    completion that returns only the function it changed -- what X1 asks for
+    on an edit task -- is judged as a bare fragment against a rival that
+    echoed the whole module. That is a difference in output format, not in
+    readability. score.py already splices fragments this way for M3 (#23);
+    M2 was left reading the raw completion.
+
+    Re-judging the 2026-08-29 baseline with this fix moved no verdict (M2 was
+    45.0% either way), so the confound was not what held M2 down -- worth
+    knowing before anyone spends a tuning cycle on it. It stays because the
+    spliced file is still the honest thing to put in front of a judge, and a
+    future run's completions need not split the same way."""
+    code = extract_code(completion_path.read_text(encoding="utf-8"), completion_ext)
+    if starter_before is None:
+        return code
+    return reconstruct_edited_file(starter_before, code)
+
+
+def judgments_dir_for(run_dir: Path, label: str | None) -> Path:
+    return run_dir / ("judgments" if label is None else f"judgments-{label}")
+
+
+def summary_path_for(run_dir: Path, label: str | None) -> Path:
+    return run_dir / ("judge_summary.json" if label is None else f"judge_summary-{label}.json")
+
+
+def run_judging(run_dir: Path, force: bool, seed: int | None, label: str | None) -> dict:
     scenarios_by_id = {s.id: s for s in load_all_scenarios()}
-    judgments_dir = run_dir / "judgments"
+    judgments_dir = judgments_dir_for(run_dir, label)
     judgments_dir.mkdir(parents=True, exist_ok=True)
 
     preference_counts = {"skill": 0, "baseline": 0, "no_verdict": 0}
@@ -335,8 +370,9 @@ def run_judging(run_dir: Path, force: bool, seed: int | None) -> dict:
             if not (baseline_path.exists() and skill_path.exists()):
                 continue
 
-            baseline_code = extract_code(baseline_path.read_text(encoding="utf-8"), completion_ext)
-            skill_code = extract_code(skill_path.read_text(encoding="utf-8"), completion_ext)
+            starter_before = starter_for_output_file(scenario)
+            baseline_code = code_as_left_on_disk(baseline_path, completion_ext, starter_before)
+            skill_code = code_as_left_on_disk(skill_path, completion_ext, starter_before)
 
             judgments = judge_pair_repeatedly(
                 scenario.id,
@@ -378,17 +414,24 @@ def main() -> int:
         help="re-run judgments that are already saved (default: reuse them, so an "
         "interrupted judging pass resumes without re-billing)",
     )
+    parser.add_argument(
+        "--label",
+        default=None,
+        help="write to judgments-<label>/ and judge_summary-<label>.json instead of "
+        "the default names, so re-judging a published run under a changed judging "
+        "method leaves its original numbers on disk to compare against",
+    )
     args = parser.parse_args()
 
     run_dir = Path(args.run)
     if not (run_dir / "raw").is_dir():
         parser.error(f"{run_dir} has no raw/ directory -- run run_bench.py first")
 
-    outcome = run_judging(run_dir, args.force, args.seed)
+    outcome = run_judging(run_dir, args.force, args.seed, args.label)
     counts = outcome["preference_counts"]
     rubric_means = outcome["rubric_means"]
 
-    summary_path = run_dir / "judge_summary.json"
+    summary_path = summary_path_for(run_dir, args.label)
     summary_path.write_text(json.dumps(outcome, indent=2), encoding="utf-8")
     print(f"wrote {summary_path}")
 
