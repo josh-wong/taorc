@@ -46,8 +46,15 @@ jobs:
       - name: Run the CI validation gate
         run: python scripts/validate.py
 
+      # Named one by one rather than discovered: evals/tests has no
+      # __init__.py, so `unittest discover` from the repo root fails with
+      # "Start directory is not importable". A new test file must be added
+      # here or it never runs.
       - name: Run the eval scoring tests
         run: python evals/tests/test_score.py -v
+
+      - name: Run the eval judging tests
+        run: python evals/tests/test_judge.py -v
 
       # R7.4: a scoring-logic change must regenerate every published artifact
       # it affects. Re-score each committed run and fail on any drift, so a

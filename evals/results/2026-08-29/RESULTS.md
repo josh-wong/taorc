@@ -262,7 +262,22 @@ Everything below is in this directory.
 
 - `raw/` — every completion plus its `*.meta.json`.
 - `scores.json` — `score.py` output (M1, M3, descriptive metrics).
-- `judgments/` — one file per judgment (40 files).
-- `judge_summary.json` — preference counts and per-category rubric means.
+- `judgments/` — one file per judgment (40 files). **Canonical for this run**:
+  every number in this document comes from here.
+- `judge_summary.json` — preference counts and per-category rubric means,
+  aggregated from `judgments/`. Canonical.
+- `judgments-fixed/` and `judge_summary-fixed.json` — the same 40 pairs
+  re-judged later, under MS7's `code_as_left_on_disk` (#9), which splices a
+  fragment completion onto its starter before handing it to the judge.
+  Added by the MS7 tuning run to show what that measurement change does to
+  an already-published run; **not canonical, and not a correction of the
+  numbers above**. M2 is 45.0% in both. The rubric means differ (C −0.32 →
+  −0.23, N −0.12 → −0.03, S −0.08 → +0.05), but that is mostly the judge
+  answering a second time: 29 of the 40 judgments changed rubric scores while
+  only 2 had different inputs. See [the 2026-09-01
+  write-up](../2026-09-01/RESULTS.md#the-judge-fragment-fix-moved-no-verdict-on-the-two-judgments-that-tested-it).
+  Note also that `judgments-fixed/` was produced before the splice was gated
+  to the `measure_diff_size` scenarios, so it spliced more scenarios than
+  `judge.py` does now.
 - `triggers/` — `run_triggers.py` output: `raw/<id>.json` per prompt and
   `triggers_summary.json`.

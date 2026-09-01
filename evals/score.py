@@ -498,7 +498,21 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     only the changed or added function is applied onto the starter: a top-level
     definition with a matching name replaces the original, a new one is
     appended, one dropped from inside the rewritten region is deleted, and
-    anything else the completion never mentions stays byte-for-byte."""
+    anything else the completion never mentions stays byte-for-byte.
+
+    Two limits worth knowing before reusing this for anything but M3:
+
+    A new definition goes at the end of the file, whatever placement the
+    completion asked for -- a fragment that adds one function alone carries no
+    structural anchor, and only its surrounding prose says where it belongs.
+    Harmless for M3, which counts diff lines. Not harmless for judging, where
+    the F and S rubric categories grade reading order, so a judge scores the
+    layout this function chose rather than the model's.
+
+    Deletion cannot be expressed at all except inside a region the completion
+    rewrote wholesale. Splicing a completion whose task was removal restores
+    what it removed; judge.py's starter_to_splice_onto exists to keep that
+    off the removal-shaped scenarios."""
     try:
         starter_tree = ast.parse(starter_source)
         completion_tree = ast.parse(completion_code)

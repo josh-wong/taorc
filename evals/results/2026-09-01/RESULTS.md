@@ -324,6 +324,14 @@ comfortable margin.
 - **Position bias is present but balanced.** The judge chose "A" in 22 of 40
   judgments, and the skill was labeled A in exactly 20 of 40, so the bias does
   not favor either condition.
+- **One judged file has a layout the model did not choose.** Where a
+  completion returns only its new function, `reconstruct_edited_file` appends
+  it at the end of the file; the placement lives only in the completion's
+  prose, which the judge never sees. `03-add-feature`/claude/skill asks for
+  `remove_line` beside `add_line` and is judged with it last, after
+  `cart_total`. It is the single spliced completion in this run, but F and S
+  are exactly the categories that grade reading order, so that pair's F and S
+  scores are partly the splicer's.
 - **The jump from 45% is larger than the noise.** A 25pp move with seven pairs
   improving and two regressing is not a resampling artifact, even if the exact
   70.0% is.
