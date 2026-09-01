@@ -43,6 +43,7 @@ from evallib.scenarios import Scenario, load_all_scenarios  # noqa: E402
 from run_bench import output_extension  # noqa: E402
 from score import (  # noqa: E402
     extract_code,
+    merge_completion_prologue,
     reconstruct_edited_file,
     starter_for_output_file,
 )
@@ -354,6 +355,10 @@ def code_as_left_on_disk(
     Pass starter_before=None to judge the completion as printed -- see
     starter_to_splice_onto for which scenarios must take that path.
 
+    The splice keeps the starter's prologue, so the completion's own imports
+    and module-level constants are merged back in afterwards; without that a
+    fragment is judged on code that cannot resolve the names it calls (#30).
+
     Re-judging the 2026-08-29 baseline with this fix moved no verdict (M2 was
     45.0% either way), so the confound was not what held M2 down -- worth
     knowing before anyone spends a tuning cycle on it. It stays because the
@@ -362,7 +367,7 @@ def code_as_left_on_disk(
     code = extract_code(completion_path.read_text(encoding="utf-8"), completion_ext)
     if starter_before is None:
         return code
-    return reconstruct_edited_file(starter_before, code)
+    return merge_completion_prologue(reconstruct_edited_file(starter_before, code), code)
 
 
 

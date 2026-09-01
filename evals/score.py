@@ -370,6 +370,26 @@ def _leading_whitespace(line: str) -> str:
     return line[: len(line) - len(line.lstrip())]
 
 
+def _is_docstring(node: ast.stmt) -> bool:
+    return (
+        isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    )
+
+
+def _line_after_prologue(tree: ast.Module) -> int:
+    """The 0-indexed line to insert another prologue statement at: just past
+    the module's last leading import or assignment, or 0 when the file opens
+    straight into a definition."""
+    insert_at = 0
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            break
+        insert_at = node.end_lineno
+    return insert_at
+
+
 def _starter_method_spans(
     tree: ast.Module, source_lines: list[str]
 ) -> dict[str, list[tuple[str, tuple[int, int], str]]]:
@@ -500,7 +520,7 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     appended, one dropped from inside the rewritten region is deleted, and
     anything else the completion never mentions stays byte-for-byte.
 
-    Two limits worth knowing before reusing this for anything but M3:
+    Three limits worth knowing before reusing this for anything but M3:
 
     A new definition goes at the end of the file, whatever placement the
     completion asked for -- a fragment that adds one function alone carries no
@@ -508,6 +528,11 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     Harmless for M3, which counts diff lines. Not harmless for judging, where
     the F and S rubric categories grade reading order, so a judge scores the
     layout this function chose rather than the model's.
+
+    The rebuilt file carries the starter's prologue, not the completion's, so
+    an import or module-level constant the fragment added is dropped -- one
+    uncounted diff line for M3, but code that no longer resolves its own names
+    for anyone else. merge_completion_prologue puts those lines back.
 
     Deletion cannot be expressed at all except inside a region the completion
     rewrote wholesale. Splicing a completion whose task was removal restores
@@ -616,6 +641,60 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
             rebuilt.extend(["", "", *_lines_in_span(completion_lines, span)])
 
     return "\n".join(rebuilt) + "\n"
+
+
+def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
+    """`spliced_source` with every import and module-level assignment the
+    completion added but the splice dropped, inserted below the prologue the
+    file already has.
+
+    reconstruct_edited_file rebuilds a fragment from the starter's lines plus
+    the completion's definitions, which loses the completion's own prologue.
+    M3 only undercounts a line for that. A judge is handed code that cannot
+    resolve its own names: a completion that adds `import logging` and a
+    module-level `logger`, then follows X1 by printing only the function it
+    changed, is graded on a file where `logger` is undefined -- the output-format
+    confound that splicing exists to remove, in a worse form.
+
+    A leading module docstring is never merged: the starter's already stands,
+    a second one lands mid-file as a stray expression, and an absent one
+    breaks no name. A statement whose every line the spliced file already has
+    is skipped, so merging into a whole-file completion changes nothing.
+
+    Returns spliced_source unchanged when either side fails to parse or the
+    completion's prologue adds nothing.
+    """
+    try:
+        spliced_tree = ast.parse(spliced_source)
+        completion_tree = ast.parse(completion_code)
+    except SyntaxError:
+        return spliced_source
+
+    spliced_lines = spliced_source.splitlines()
+    completion_lines = completion_code.splitlines()
+    lines_already_spliced = {line.strip() for line in spliced_lines if line.strip()}
+
+    added_lines: list[str] = []
+    for position, node in enumerate(completion_tree.body):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if position == 0 and _is_docstring(node):
+            continue
+        statement_lines = _lines_in_span(completion_lines, (node.lineno, node.end_lineno))
+        if all(
+            line.strip() in lines_already_spliced for line in statement_lines if line.strip()
+        ):
+            continue
+        added_lines.extend(statement_lines)
+
+    if not added_lines:
+        return spliced_source
+
+    insert_at = _line_after_prologue(spliced_tree)
+    if insert_at == 0:
+        added_lines.extend(["", ""])
+    merged_lines = spliced_lines[:insert_at] + added_lines + spliced_lines[insert_at:]
+    return "\n".join(merged_lines) + "\n"
 
 
 def starter_for_output_file(scenario: Scenario) -> str | None:

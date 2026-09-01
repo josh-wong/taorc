@@ -57,6 +57,26 @@ I left `add_line` and `cart_total` alone.
 '''
 
 
+FRAGMENT_ADDING_AN_IMPORT = '''\
+Logging a skipped line needs the stdlib logger.
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def cart_total(cart):
+    for line in cart:
+        if line["qty"] < 0:
+            logger.warning("negative qty on %s", line["sku"])
+    return sum(line["qty"] * line["amt"] for line in cart)
+```
+
+`add_line` is unchanged.
+'''
+
+
 class CodeAsLeftOnDiskTest(unittest.TestCase):
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
@@ -83,6 +103,33 @@ class CodeAsLeftOnDiskTest(unittest.TestCase):
         judged = code_as_left_on_disk(self.completion_file(rewritten), ".py", CART_STARTER)
 
         self.assertEqual(judged, rewritten)
+
+    def test_fragment_is_judged_with_the_imports_it_added(self):
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_ADDING_AN_IMPORT), ".py", CART_STARTER
+        )
+
+        self.assertIn("import logging", judged)
+        self.assertIn("logger = logging.getLogger(__name__)", judged)
+        self.assertIn("logger.warning", judged)
+
+    def test_merged_import_lands_above_the_first_definition(self):
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_ADDING_AN_IMPORT), ".py", CART_STARTER
+        )
+        lines = judged.splitlines()
+
+        self.assertLess(
+            lines.index("import logging"),
+            lines.index("def add_line(cart, sku, qty, amt):"),
+        )
+
+    def test_full_file_completion_does_not_get_a_second_docstring(self):
+        rewritten = CART_STARTER.replace("amt", "unit_price_cents")
+
+        judged = code_as_left_on_disk(self.completion_file(rewritten), ".py", CART_STARTER)
+
+        self.assertEqual(judged.count('"""Shopping cart."""'), 1)
 
     def test_scenario_with_no_starter_is_judged_as_written(self):
         from_scratch = "def quote_shipping_cost(weight_kg):\n    return int(50 * weight_kg)\n"
