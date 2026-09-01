@@ -61,6 +61,24 @@ FENCE_LANGS_FOR_SUFFIX = {
     ".jsx": {"jsx", "javascript"},
 }
 
+# Fence tags that mark a block as prose or a terminal transcript, never the
+# answer. When no block matches the scenario's language, the largest block
+# that isn't one of these wins -- an untagged answer or an unusual code tag
+# (```pycon, ```python-repl) beats a longer ```text findings list.
+PROSE_FENCE_LANGS = {
+    "text",
+    "txt",
+    "plaintext",
+    "markdown",
+    "md",
+    "console",
+    "output",
+    "log",
+    "shell",
+    "sh",
+    "bash",
+}
+
 # Sourced from the N1 ast-grep rule itself (rather than a second hardcoded
 # list here) so this metric can't silently drift from what the linter
 # already treats as an empty word.
@@ -84,10 +102,10 @@ EMPTY_WORD_PATTERN = load_empty_word_pattern()
 def extract_code(completion_text: str, output_suffix: str = "") -> str:
     """A raw completion is often prose plus one or more fenced code blocks.
     Prefer the largest block whose fence language matches the scenario's
-    output file; with no such block, prefer the largest *untagged* fence (a
-    real answer the model left untagged) over a tagged prose block like
-    ```text; fall back to the largest block of any language; if the model
-    returned bare code with no fence at all, score the whole response."""
+    output file; with no such block, prefer the largest fence that isn't
+    tagged as prose (```text and friends) over one that is; fall back to the
+    largest block of any language; if the model returned bare code with no
+    fence at all, score the whole response."""
     blocks = CODE_FENCE_PATTERN.findall(completion_text)
     if not blocks:
         return completion_text
@@ -95,8 +113,8 @@ def extract_code(completion_text: str, output_suffix: str = "") -> str:
     same_language_blocks = [body for lang, body in blocks if lang.lower() in wanted_langs]
     if same_language_blocks:
         return max(same_language_blocks, key=len)
-    untagged_blocks = [body for lang, body in blocks if lang == ""]
-    return max(untagged_blocks or [body for _lang, body in blocks], key=len)
+    non_prose_blocks = [body for lang, body in blocks if lang.lower() not in PROSE_FENCE_LANGS]
+    return max(non_prose_blocks or [body for _lang, body in blocks], key=len)
 
 
 def count_loc(code: str) -> int:

@@ -386,7 +386,14 @@ class ExtractCodeTest(unittest.TestCase):
         completion = "def total(cart):\n    return sum(item.price for item in cart)\n"
         self.assertEqual(extract_code(completion, ".py"), completion)
 
-    def test_no_language_match_falls_back_to_the_longest_block(self):
+    def test_unusual_code_tag_wins_over_a_longer_prose_block(self):
+        completion = (
+            "Notes:\n\n```text\n" + "a line of explanation\n" * 20 + "```\n\n"
+            "```python-repl\ndef total(cart):\n    return sum(i.price for i in cart)\n```\n"
+        )
+        self.assertIn("def total(cart):", extract_code(completion, ".py"))
+
+    def test_when_every_block_is_prose_the_longest_one_wins(self):
         completion = (
             "```text\nshort note\n```\n\n```console\n" + "a longer log line\n" * 5 + "```\n"
         )
