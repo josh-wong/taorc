@@ -19,7 +19,7 @@ from pathlib import Path
 EVALS_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(EVALS_ROOT))
 
-from score import diff_line_count, reconstruct_edited_file  # noqa: E402
+from score import diff_line_count, extract_code, reconstruct_edited_file  # noqa: E402
 
 CART_STARTER = '''\
 """Shopping cart."""
@@ -343,6 +343,61 @@ def cart_total(cart):
 
         self.assertEqual(rebuilt, rewrite_editing_every_function)
         self.assertNotIn("Shopping cart", rebuilt)
+
+
+class ExtractCodeTest(unittest.TestCase):
+    """extract_code picks which fenced block of a raw completion is scored.
+    A skill-condition answer is often a short ```python block followed by a
+    longer ```text findings list, so "longest block wins" scores the prose."""
+
+    def test_matching_language_block_wins_over_a_longer_text_block(self):
+        completion = (
+            "Here is the cleaned-up function:\n\n"
+            "```python\ndef total(cart):\n    return sum(item.price for item in cart)\n```\n\n"
+            "Findings:\n\n```text\n"
+            + "- renamed c to cart for clarity\n" * 20
+            + "```\n"
+        )
+        self.assertIn("def total(cart):", extract_code(completion, ".py"))
+
+    def test_answer_in_an_untagged_fence_wins_over_a_short_tagged_prose_block(self):
+        completion = (
+            "Summary:\n\n```text\nrenamed one variable\n```\n\n"
+            "Full answer:\n\n```\n"
+            "def total(cart):\n    return sum(item.price for item in cart if item.qty > 0)\n"
+            "```\n"
+        )
+        self.assertIn("item.qty > 0", extract_code(completion, ".py"))
+
+    def test_matching_language_block_wins_even_when_shorter_than_an_untagged_block(self):
+        completion = (
+            "```python\nx = 1\n```\n\n```\n" + "unrelated log output\n" * 10 + "```\n"
+        )
+        self.assertEqual(extract_code(completion, ".py").strip(), "x = 1")
+
+    def test_version_tagged_python_fence_is_treated_as_the_code(self):
+        completion = (
+            "Summary:\n\n```\n" + "a note about the change\n" * 5 + "```\n\n"
+            "```python3\ndef total(cart):\n    return sum(i.price for i in cart)\n```\n"
+        )
+        self.assertIn("def total(cart):", extract_code(completion, ".py"))
+
+    def test_bare_code_with_no_fence_scores_the_whole_response(self):
+        completion = "def total(cart):\n    return sum(item.price for item in cart)\n"
+        self.assertEqual(extract_code(completion, ".py"), completion)
+
+    def test_unusual_code_tag_wins_over_a_longer_prose_block(self):
+        completion = (
+            "Notes:\n\n```text\n" + "a line of explanation\n" * 20 + "```\n\n"
+            "```python-repl\ndef total(cart):\n    return sum(i.price for i in cart)\n```\n"
+        )
+        self.assertIn("def total(cart):", extract_code(completion, ".py"))
+
+    def test_when_every_block_is_prose_the_longest_one_wins(self):
+        completion = (
+            "```text\nshort note\n```\n\n```console\n" + "a longer log line\n" * 5 + "```\n"
+        )
+        self.assertIn("a longer log line", extract_code(completion, ".py"))
 
 
 if __name__ == "__main__":

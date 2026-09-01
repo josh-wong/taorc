@@ -49,6 +49,17 @@ jobs:
       - name: Run the eval scoring tests
         run: python evals/tests/test_score.py -v
 
+      # R7.4: a scoring-logic change must regenerate every published artifact
+      # it affects. Re-score each committed run and fail on any drift, so a
+      # future change to score.py cannot silently orphan scores.json.
+      - name: Fail if re-scoring a published run drifts from its committed scores.json
+        run: |
+          for run in evals/results/*/; do
+            [ -d "${run}raw" ] && [ -f "${run}scores.json" ] || continue
+            python evals/score.py --run "$run"
+          done
+          git diff --exit-code -- 'evals/results/*/scores.json'
+
   # §9 items 8-9: installer behavior and placement-matrix tests need to pass
   # on all three OSes, since install.sh and install.ps1 each have to work
   # standalone -- a Linux-only pass would never catch a bash-ism install.ps1
