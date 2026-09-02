@@ -144,6 +144,54 @@ def fetch_prices(client):
 '''
 
 
+FRAGMENT_EXPLAINING_A_HOISTED_CONSTANT = '''\
+```python
+# The gateway drops idle sockets at 45s, so stay under it.
+timeout_secs = 30
+
+
+def fetch_prices(client):
+    return client.get("/prices", timeout=timeout_secs)
+```
+'''
+
+
+FRAGMENT_WITH_A_DISPATCH_TABLE_BELOW_ITS_FUNCTION = '''\
+```python
+def cart_total(cart):
+    return sum(line["qty"] * line["amt"] for line in cart if line["qty"] > 0)
+
+
+CART_OPERATIONS = {"total": cart_total}
+```
+'''
+
+
+EXECUTABLE_STARTER = '''\
+#!/usr/bin/env python3
+
+import json
+
+
+def report(rows):
+    return json.dumps(rows)
+'''
+
+
+SHEBANG_ONLY_STARTER = '''\
+#!/usr/bin/env python3
+
+
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt})
+    return cart
+
+
+def cart_total(cart):
+    return sum(line["qty"] * line["amt"] for line in cart)
+'''
+
+
 class CodeAsLeftOnDiskTest(unittest.TestCase):
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
@@ -233,6 +281,56 @@ class CodeAsLeftOnDiskTest(unittest.TestCase):
         )
 
         self.assertIn("timeout_secs = 30", judged.splitlines())
+
+    def test_hoisted_constant_keeps_the_comment_written_above_it(self):
+        """The comment is the `why` C5 asks for, and dropping it grades the
+        completion on the C rubric for a comment it did write."""
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_EXPLAINING_A_HOISTED_CONSTANT),
+            ".py",
+            TIMEOUT_STARTER,
+        )
+        lines = judged.splitlines()
+
+        self.assertEqual(
+            lines[lines.index("timeout_secs = 30") - 1],
+            "# The gateway drops idle sockets at 45s, so stay under it.",
+        )
+
+    def test_assignment_below_the_completions_functions_is_left_out_not_hoisted(self):
+        """A dispatch table naming the functions above it resolves nothing once
+        the merge lifts it over them -- the NameError the type filter alone was
+        argued to prevent."""
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_WITH_A_DISPATCH_TABLE_BELOW_ITS_FUNCTION),
+            ".py",
+            CART_STARTER,
+        )
+
+        exec(compile(judged, "<judged>", "exec"), {})
+        self.assertNotIn("CART_OPERATIONS", judged)
+
+    def test_merged_future_import_lands_below_the_starters_shebang(self):
+        """Inserted at line 1 instead, the shebang becomes an ordinary comment
+        and the file is no longer executable as the script it was."""
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_ADDING_A_FUTURE_IMPORT), ".py", EXECUTABLE_STARTER
+        )
+        lines = judged.splitlines()
+
+        self.assertEqual(lines[0], "#!/usr/bin/env python3")
+        self.assertLess(
+            lines.index("from __future__ import annotations"), lines.index("import json")
+        )
+
+    def test_merged_import_lands_below_the_starters_shebang(self):
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_ADDING_AN_IMPORT), ".py", SHEBANG_ONLY_STARTER
+        )
+        lines = judged.splitlines()
+
+        self.assertEqual(lines[0], "#!/usr/bin/env python3")
+        self.assertLess(lines.index("import logging"), lines.index("def cart_total(cart):"))
 
     def test_full_file_completion_does_not_get_a_second_docstring(self):
         rewritten = CART_STARTER.replace("amt", "unit_price_cents")

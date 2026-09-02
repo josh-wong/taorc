@@ -378,11 +378,25 @@ def _is_docstring(node: ast.stmt) -> bool:
     )
 
 
-def _line_after_prologue(tree: ast.Module) -> int:
+def _line_after_comment_header(source_lines: list[str]) -> int:
+    """The 0-indexed line just past the comment block a file opens with -- a
+    shebang, a license header -- or 0 when it opens with anything else.
+    Inserting above a shebang demotes it to an ordinary comment, which leaves
+    the file no longer executable as a script and reads as damage to a judge
+    grading layout."""
+    past_header = 0
+    for line in source_lines:
+        if not line.lstrip().startswith("#"):
+            break
+        past_header += 1
+    return past_header
+
+
+def _line_after_prologue(tree: ast.Module, source_lines: list[str]) -> int:
     """The 0-indexed line to insert another prologue statement at: just past
-    the module's last leading import or assignment, or 0 when the file opens
-    straight into a definition."""
-    insert_at = 0
+    the module's last leading import or assignment, or just past the opening
+    comment header when the file goes straight from that into a definition."""
+    insert_at = _line_after_comment_header(source_lines)
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             break
@@ -390,13 +404,24 @@ def _line_after_prologue(tree: ast.Module) -> int:
     return insert_at
 
 
-def _line_after_module_docstring(tree: ast.Module) -> int:
+def _line_for_future_import(tree: ast.Module, source_lines: list[str]) -> int:
     """The 0-indexed line a `from __future__` import has to go at or before:
-    just past the module docstring, or 0 when the file has none. A docstring is
-    the only statement Python lets precede a future import."""
+    just past the module docstring, or past the opening comment header when the
+    file has no docstring. A docstring is the only statement Python lets precede
+    a future import, and a comment is not a statement at all."""
     if tree.body and _is_docstring(tree.body[0]):
         return tree.body[0].end_lineno
-    return 0
+    return _line_after_comment_header(source_lines)
+
+
+def _first_line_of_leading_comments(source_lines: list[str], first_line: int) -> int:
+    """The 1-indexed line the comment block above a statement starts on, or
+    `first_line` when code or blank space sits directly above it. A statement's
+    ast span starts at the statement itself, so merging by span alone strips the
+    `why` comment C5 asks for off the constant it explains."""
+    while first_line > 1 and source_lines[first_line - 2].lstrip().startswith("#"):
+        first_line -= 1
+    return first_line
 
 
 def _opens_a_definition(line: str) -> bool:
@@ -692,6 +717,16 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
     left out for its own reason: the starter's already stands, and a second one
     lands mid-file as a stray expression.
 
+    Only the completion's own prologue is read: the scan stops at its first
+    definition, because the same insert-above-the-definitions rule makes an
+    assignment the completion wrote below its functions -- a dispatch table
+    naming them, say -- raise NameError once hoisted above them.
+
+    A comment block sitting directly above a merged statement travels with it.
+    The statement's ast span begins at the statement, so merging by span alone
+    would drop the rationale off a hoisted constant and penalize the completion
+    on C for a comment it did write.
+
     A `from __future__` import goes above the prologue rather than below it,
     since Python compiles it nowhere else. ast.parse accepts the misplaced
     version -- it defers that check to compile() -- so nothing downstream
@@ -720,24 +755,31 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
     added_lines: list[str] = []
     line_after_last_added = 0
     for node in completion_tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            break
         if not isinstance(node, (ast.Import, ast.ImportFrom, ast.Assign, ast.AnnAssign)):
             continue
         statement_lines = _lines_in_span(completion_lines, (node.lineno, node.end_lineno))
+        # Judged on the statement's own lines: the spliced file's prologue is
+        # read off its ast too, so a comment above a duplicate import is in
+        # neither set and would make the import look new.
         if all(
             line.strip() in prologue_already_spliced
             for line in statement_lines
             if line.strip()
         ):
             continue
+        first_line = _first_line_of_leading_comments(completion_lines, node.lineno)
+        with_its_comment = _lines_in_span(completion_lines, (first_line, node.end_lineno))
         if isinstance(node, ast.ImportFrom) and node.module == "__future__":
-            future_import_lines.extend(statement_lines)
+            future_import_lines.extend(with_its_comment)
             continue
         # A blank line the completion left between two of these statements is
         # the grouping its author chose, and the spans alone would run them
         # together. M2 grades layout, so the merge must not invent its own.
-        if added_lines and node.lineno > line_after_last_added:
+        if added_lines and first_line > line_after_last_added:
             added_lines.append("")
-        added_lines.extend(statement_lines)
+        added_lines.extend(with_its_comment)
         line_after_last_added = node.end_lineno + 1
 
     if not added_lines and not future_import_lines:
@@ -746,13 +788,15 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
     merged_lines = spliced_lines
     if added_lines:
         merged_lines = _inserted_with_blank_lines(
-            merged_lines, _line_after_prologue(spliced_tree), added_lines
+            merged_lines, _line_after_prologue(spliced_tree, spliced_lines), added_lines
         )
     # Inserted second, and at a line at or above the one the prologue merge
     # used, so the earlier insertion has not moved the index out from under it.
     if future_import_lines:
         merged_lines = _inserted_with_blank_lines(
-            merged_lines, _line_after_module_docstring(spliced_tree), future_import_lines
+            merged_lines,
+            _line_for_future_import(spliced_tree, spliced_lines),
+            future_import_lines,
         )
     return "\n".join(merged_lines) + "\n"
 
