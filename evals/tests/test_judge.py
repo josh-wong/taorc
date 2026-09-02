@@ -178,6 +178,34 @@ def report(rows):
 '''
 
 
+FRAGMENT_WITH_ITS_OWN_SHEBANG = '''\
+```python
+#!/usr/bin/env python3
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def cart_total(cart):
+    logger.info("totalling %d lines", len(cart))
+    return sum(line["qty"] * line["amt"] for line in cart)
+```
+'''
+
+
+FRAGMENT_WHOSE_PROLOGUE_REPEATS_ONE_IMPORT = '''\
+```python
+import logging
+import json
+MAX_LINES = 50
+
+
+def cart_total(cart):
+    return sum(line["qty"] * line["amt"] for line in cart[:MAX_LINES])
+```
+'''
+
+
 SHEBANG_ONLY_STARTER = '''\
 #!/usr/bin/env python3
 
@@ -331,6 +359,30 @@ class CodeAsLeftOnDiskTest(unittest.TestCase):
 
         self.assertEqual(lines[0], "#!/usr/bin/env python3")
         self.assertLess(lines.index("import logging"), lines.index("def cart_total(cart):"))
+
+    def test_completions_own_shebang_is_left_out_of_the_middle_of_the_file(self):
+        """The completion writes its import directly under its own shebang, and
+        carrying that comment along with the import drops a stray `#!` line into
+        the body of the spliced file -- layout the F and S rubrics penalize."""
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_WITH_ITS_OWN_SHEBANG), ".py", CART_STARTER
+        )
+
+        self.assertNotIn("#!/usr/bin/env python3", judged.splitlines())
+        self.assertIn("import logging", judged.splitlines())
+
+    def test_import_the_starter_already_had_leaves_no_blank_line_behind_it(self):
+        """The completion wrote its three prologue lines as one group. Skipping
+        the middle one as a duplicate must not split the survivors apart -- M2
+        grades layout, so the merge cannot invent grouping the author didn't."""
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_WHOSE_PROLOGUE_REPEATS_ONE_IMPORT),
+            ".py",
+            CART_STARTER_THAT_IMPORTS,
+        )
+        lines = judged.splitlines()
+
+        self.assertEqual(lines[lines.index("MAX_LINES = 50") - 1], "import logging")
 
     def test_full_file_completion_does_not_get_a_second_docstring(self):
         rewritten = CART_STARTER.replace("amt", "unit_price_cents")

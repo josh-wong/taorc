@@ -377,7 +377,10 @@ def code_as_left_on_disk(
 
     Re-judging the 2026-08-29 baseline with this fix moved no verdict (M2 was
     45.0% either way), so the confound was not what held M2 down -- worth
-    knowing before anyone spends a tuning cycle on it. It stays because the
+    knowing before anyone spends a tuning cycle on it. That re-judge ran before
+    the splice was gated to the measure_diff_size scenarios, so it spliced more
+    scenarios than this does now; read it as evidence about the confound, not
+    as a check of the function as shipped. It stays because the
     spliced file is still the honest thing to put in front of a judge, and a
     future run's completions need not split the same way."""
     code = extract_code(completion_path.read_text(encoding="utf-8"), completion_ext)

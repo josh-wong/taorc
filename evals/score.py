@@ -414,12 +414,31 @@ def _line_for_future_import(tree: ast.Module, source_lines: list[str]) -> int:
     return _line_after_comment_header(source_lines)
 
 
-def _first_line_of_leading_comments(source_lines: list[str], first_line: int) -> int:
+def _line_after_shebang(source_lines: list[str]) -> int:
+    """The 0-indexed line just past a file's shebang, or 0 when it has none.
+
+    Only the shebang, not the whole opening comment block: a comment block a
+    completion opens with is as likely to be the `why` for the constant under
+    it as a file header, and keeping it is the cheaper mistake. A `#!` line is
+    a header either way, and copying one into the middle of a file is damage a
+    judge can see."""
+    return 1 if source_lines and source_lines[0].startswith("#!") else 0
+
+
+def _first_line_of_leading_comments(
+    source_lines: list[str], first_line: int, header_end: int = 0
+) -> int:
     """The 1-indexed line the comment block above a statement starts on, or
     `first_line` when code or blank space sits directly above it. A statement's
     ast span starts at the statement itself, so merging by span alone strips the
-    `why` comment C5 asks for off the constant it explains."""
-    while first_line > 1 and source_lines[first_line - 2].lstrip().startswith("#"):
+    `why` comment C5 asks for off the constant it explains.
+
+    Stops at `header_end` -- see _line_after_shebang. A completion whose first
+    import sits directly under its own shebang would otherwise carry that line
+    into the middle of the spliced file, the same layout damage
+    _line_after_comment_header keeps the starter's header safe from, arriving
+    from the completion side."""
+    while first_line - 1 > header_end and source_lines[first_line - 2].lstrip().startswith("#"):
         first_line -= 1
     return first_line
 
@@ -750,6 +769,7 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
     spliced_lines = spliced_source.splitlines()
     completion_lines = completion_code.splitlines()
     prologue_already_spliced = _prologue_lines(spliced_tree, spliced_lines)
+    completion_header_end = _line_after_shebang(completion_lines)
 
     future_import_lines: list[str] = []
     added_lines: list[str] = []
@@ -768,11 +788,15 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
             for line in statement_lines
             if line.strip()
         ):
+            line_after_last_added = node.end_lineno + 1
             continue
-        first_line = _first_line_of_leading_comments(completion_lines, node.lineno)
+        first_line = _first_line_of_leading_comments(
+            completion_lines, node.lineno, completion_header_end
+        )
         with_its_comment = _lines_in_span(completion_lines, (first_line, node.end_lineno))
         if isinstance(node, ast.ImportFrom) and node.module == "__future__":
             future_import_lines.extend(with_its_comment)
+            line_after_last_added = node.end_lineno + 1
             continue
         # A blank line the completion left between two of these statements is
         # the grouping its author chose, and the spans alone would run them
