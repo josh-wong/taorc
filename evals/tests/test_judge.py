@@ -80,6 +80,70 @@ def cart_total(cart):
 '''
 
 
+FRAGMENT_WITH_A_MAIN_GUARD = '''\
+```python
+def cart_total(cart):
+    return sum(line["qty"] * line["amt"] for line in cart)
+
+
+if __name__ == "__main__":
+    print(cart_total([]))
+```
+'''
+
+
+CART_STARTER_THAT_IMPORTS = '''\
+"""Shopping cart."""
+
+import json
+
+
+def add_line(cart, sku, qty, amt):
+    cart.append({"sku": sku, "qty": qty, "amt": amt})
+    return cart
+
+
+def cart_total(cart):
+    return sum(line["qty"] * line["amt"] for line in cart)
+'''
+
+
+FRAGMENT_ADDING_A_FUTURE_IMPORT = '''\
+```python
+from __future__ import annotations
+
+
+def cart_total(cart: list[dict]) -> int:
+    return sum(line["qty"] * line["amt"] for line in cart)
+```
+'''
+
+
+TIMEOUT_STARTER = '''\
+def fetch_prices(client):
+    timeout_secs = 30
+    return client.get("/prices", timeout=timeout_secs)
+
+
+def fetch_stock(client):
+    timeout_secs = 30
+    return client.get("/stock", timeout=timeout_secs)
+'''
+
+
+FRAGMENT_HOISTING_A_CONSTANT = '''\
+Both callers waited the same 30 seconds, so the literal moves up.
+
+```python
+timeout_secs = 30
+
+
+def fetch_prices(client):
+    return client.get("/prices", timeout=timeout_secs)
+```
+'''
+
+
 class CodeAsLeftOnDiskTest(unittest.TestCase):
     def setUp(self):
         scratch = tempfile.TemporaryDirectory()
@@ -126,6 +190,49 @@ class CodeAsLeftOnDiskTest(unittest.TestCase):
             lines.index("import logging"),
             lines.index("def add_line(cart, sku, qty, amt):"),
         )
+
+    def test_merged_import_is_kept_off_the_line_above_it(self):
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_ADDING_AN_IMPORT), ".py", CART_STARTER
+        )
+        lines = judged.splitlines()
+
+        self.assertEqual(lines[lines.index("import logging") - 1], "")
+        self.assertEqual(lines[lines.index("logger = logging.getLogger(__name__)") - 1], "")
+
+    def test_main_guard_is_left_out_rather_than_hoisted_above_its_function(self):
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_WITH_A_MAIN_GUARD), ".py", CART_STARTER
+        )
+
+        self.assertNotIn("__main__", judged)
+        self.assertIn("def cart_total", judged)
+
+    def test_merged_future_import_leaves_a_file_that_compiles(self):
+        """The starter imports before its first definition, so merging below
+        that prologue would put the future import where only ast.parse accepts
+        it -- 09-add-error-handling's starter opens the same way."""
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_ADDING_A_FUTURE_IMPORT),
+            ".py",
+            CART_STARTER_THAT_IMPORTS,
+        )
+        lines = judged.splitlines()
+
+        compile(judged, "<judged>", "exec")
+        self.assertLess(
+            lines.index("from __future__ import annotations"), lines.index("import json")
+        )
+
+    def test_hoisted_constant_survives_a_body_line_that_reads_the_same(self):
+        """The starter's other function still assigns `timeout_secs = 30`
+        indented, so comparing against every line of the spliced file would
+        drop the module-level constant and leave the rewrite undefined."""
+        judged = code_as_left_on_disk(
+            self.completion_file(FRAGMENT_HOISTING_A_CONSTANT), ".py", TIMEOUT_STARTER
+        )
+
+        self.assertIn("timeout_secs = 30", judged.splitlines())
 
     def test_full_file_completion_does_not_get_a_second_docstring(self):
         rewritten = CART_STARTER.replace("amt", "unit_price_cents")

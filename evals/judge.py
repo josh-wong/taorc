@@ -323,7 +323,10 @@ def starter_to_splice_onto(scenario: Scenario) -> str | None:
 
     Only the measure_diff_size scenarios qualify, which is the same gate
     score.py applies at its own reconstruct_edited_file call, so both scoring
-    tracks put the same bytes in front of their scorer. The gate is not a
+    tracks splice the same pairs onto the same starters. The two do not read
+    identical bytes: judging also merges the completion's own prologue back in,
+    which score.py deliberately does not, since that would move M3 numbers
+    already published. The gate is not a
     convention -- reconstruct_edited_file can add a definition and replace a
     definition, but it has no way to express a deleted one, so on a scenario
     whose task is removal it splices the removed code back in. 10-de-slop is
@@ -411,6 +414,9 @@ def run_judging(run_dir: Path, force: bool, seed: int | None, label: str | None)
         scenario = scenarios_by_id.get(scenario_dir.name)
         if scenario is None:
             continue
+        # Per scenario, not per model slot: the answer is the same for every
+        # slot, and the warning inside would otherwise repeat once per model.
+        starter_before = starter_to_splice_onto(scenario)
         for model_dir in sorted(scenario_dir.iterdir()):
             completion_ext = output_extension(scenario)
             baseline_path = model_dir / f"baseline{completion_ext}"
@@ -418,7 +424,6 @@ def run_judging(run_dir: Path, force: bool, seed: int | None, label: str | None)
             if not (baseline_path.exists() and skill_path.exists()):
                 continue
 
-            starter_before = starter_to_splice_onto(scenario)
             baseline_code = code_as_left_on_disk(baseline_path, completion_ext, starter_before)
             skill_code = code_as_left_on_disk(skill_path, completion_ext, starter_before)
 

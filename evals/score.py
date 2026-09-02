@@ -390,6 +390,33 @@ def _line_after_prologue(tree: ast.Module) -> int:
     return insert_at
 
 
+def _line_after_module_docstring(tree: ast.Module) -> int:
+    """The 0-indexed line a `from __future__` import has to go at or before:
+    just past the module docstring, or 0 when the file has none. A docstring is
+    the only statement Python lets precede a future import."""
+    if tree.body and _is_docstring(tree.body[0]):
+        return tree.body[0].end_lineno
+    return 0
+
+
+def _opens_a_definition(line: str) -> bool:
+    return line.startswith(("def ", "async def ", "class ", "@"))
+
+
+def _inserted_with_blank_lines(lines: list[str], insert_at: int, block: list[str]) -> list[str]:
+    """`lines` with `block` inserted at 0-indexed `insert_at`, held apart from
+    its new neighbours by a blank line -- two where a definition follows, which
+    is what a formatter would leave. Adds no blank line at the start or end of
+    the file, or where the neighbour is already blank."""
+    before, after = lines[:insert_at], lines[insert_at:]
+    spaced = list(block)
+    if before and before[-1].strip():
+        spaced.insert(0, "")
+    if after and after[0].strip():
+        spaced.extend(["", ""] if _opens_a_definition(after[0]) else [""])
+    return before + spaced + after
+
+
 def _starter_method_spans(
     tree: ast.Module, source_lines: list[str]
 ) -> dict[str, list[tuple[str, tuple[int, int], str]]]:
@@ -646,7 +673,8 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
 def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
     """`spliced_source` with every import and module-level assignment the
     completion added but the splice dropped, inserted below the prologue the
-    file already has.
+    file already has -- above it for a `from __future__` import, the one
+    statement Python accepts nowhere else.
 
     reconstruct_edited_file rebuilds a fragment from the starter's lines plus
     the completion's definitions, which loses the completion's own prologue.
@@ -656,10 +684,24 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
     changed, is graded on a file where `logger` is undefined -- the output-format
     confound that splicing exists to remove, in a worse form.
 
-    A leading module docstring is never merged: the starter's already stands,
-    a second one lands mid-file as a stray expression, and an absent one
-    breaks no name. A statement whose every line the spliced file already has
-    is skipped, so merging into a whole-file completion changes nothing.
+    Imports and assignments are the only statements merged. Anything else a
+    completion leaves at module level runs rather than defines -- an
+    `if __name__ == "__main__"` guard, a demo call -- and the merge inserts
+    above the file's definitions, so merging one would hand the judge a file
+    that raises NameError on the function it sits above. A module docstring is
+    left out for its own reason: the starter's already stands, and a second one
+    lands mid-file as a stray expression.
+
+    A `from __future__` import goes above the prologue rather than below it,
+    since Python compiles it nowhere else. ast.parse accepts the misplaced
+    version -- it defers that check to compile() -- so nothing downstream
+    would have reported the file it produced.
+
+    A statement whose every line the spliced file's own prologue already has
+    is skipped, so merging into a whole-file completion changes nothing. The
+    comparison is against that prologue rather than every line in the file,
+    which would let a constant coincide with an indented line inside some
+    function body and be dropped as already present.
 
     Returns spliced_source unchanged when either side fails to parse or the
     completion's prologue adds nothing.
@@ -672,28 +714,46 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
 
     spliced_lines = spliced_source.splitlines()
     completion_lines = completion_code.splitlines()
-    lines_already_spliced = {line.strip() for line in spliced_lines if line.strip()}
+    prologue_already_spliced = _prologue_lines(spliced_tree, spliced_lines)
 
+    future_import_lines: list[str] = []
     added_lines: list[str] = []
-    for position, node in enumerate(completion_tree.body):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        if position == 0 and _is_docstring(node):
+    line_after_last_added = 0
+    for node in completion_tree.body:
+        if not isinstance(node, (ast.Import, ast.ImportFrom, ast.Assign, ast.AnnAssign)):
             continue
         statement_lines = _lines_in_span(completion_lines, (node.lineno, node.end_lineno))
         if all(
-            line.strip() in lines_already_spliced for line in statement_lines if line.strip()
+            line.strip() in prologue_already_spliced
+            for line in statement_lines
+            if line.strip()
         ):
             continue
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+            future_import_lines.extend(statement_lines)
+            continue
+        # A blank line the completion left between two of these statements is
+        # the grouping its author chose, and the spans alone would run them
+        # together. M2 grades layout, so the merge must not invent its own.
+        if added_lines and node.lineno > line_after_last_added:
+            added_lines.append("")
         added_lines.extend(statement_lines)
+        line_after_last_added = node.end_lineno + 1
 
-    if not added_lines:
+    if not added_lines and not future_import_lines:
         return spliced_source
 
-    insert_at = _line_after_prologue(spliced_tree)
-    if insert_at == 0:
-        added_lines.extend(["", ""])
-    merged_lines = spliced_lines[:insert_at] + added_lines + spliced_lines[insert_at:]
+    merged_lines = spliced_lines
+    if added_lines:
+        merged_lines = _inserted_with_blank_lines(
+            merged_lines, _line_after_prologue(spliced_tree), added_lines
+        )
+    # Inserted second, and at a line at or above the one the prologue merge
+    # used, so the earlier insertion has not moved the index out from under it.
+    if future_import_lines:
+        merged_lines = _inserted_with_blank_lines(
+            merged_lines, _line_after_module_docstring(spliced_tree), future_import_lines
+        )
     return "\n".join(merged_lines) + "\n"
 
 
