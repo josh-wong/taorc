@@ -50,7 +50,10 @@ LINT_SCRIPT = REPO_ROOT / "skills" / "readable-code" / "scripts" / "taorc_lint.p
 # run already published under the old definition.
 #   1 -> the MS6 scorer (implicit; pre-versioning runs carry no field)
 #   2 -> M1 counts only the findings a completion introduced, not those it
-#        inherited unchanged from the scenario's starter (issue #31)
+#        inherited unchanged from the scenario's starter (issues #31, #34): a
+#        finding is inherited only when the starter line it sits on survived
+#        the edit in place, so a fresh violation on a coincidentally identical
+#        line still counts
 SCORER_VERSION = 2
 
 sys.path.insert(0, str(EVALS_ROOT))
@@ -957,30 +960,82 @@ def _finding_signature(finding: dict) -> tuple[str, str]:
     return finding.get("id", ""), (finding.get("matched") or "").strip()
 
 
+def _retained_line_map(starter_source: str, completion_source: str) -> dict[int, int]:
+    """Maps a 1-based starter line number to the completion line number holding
+    the same content, for every line the edit carried through unchanged and in
+    place. Lines the completion deleted, replaced, or added are absent. Built
+    from difflib's `equal` opcodes, counting only blocks of two or more lines,
+    so a starter line is retained only when it and a neighbour stayed aligned
+    together -- not merely because its text reappears in the completion. A
+    starter function the completion deleted takes its findings with it even
+    when a common line inside it (`data = []`, `return total`) resurfaces in a
+    new function difflib aligns it to (issue #34). A construct the edit truly
+    left alone keeps its whole surrounding block, so the two-line floor does
+    not cost a real inherited finding."""
+    starter_lines = starter_source.splitlines()
+    completion_lines = completion_source.splitlines()
+    matcher = difflib.SequenceMatcher(a=starter_lines, b=completion_lines, autojunk=False)
+    retained: dict[int, int] = {}
+    for tag, starter_start, starter_end, completion_start, _ in matcher.get_opcodes():
+        if tag != "equal" or starter_end - starter_start < 2:
+            continue
+        for offset in range(starter_end - starter_start):
+            retained[starter_start + offset + 1] = completion_start + offset + 1
+    return retained
+
+
 def findings_introduced(
-    completion_findings: list[dict], starter_findings: list[dict] | None
+    completion_findings: list[dict],
+    starter_findings: list[dict] | None,
+    starter_source: str | None = None,
+    completion_source: str | None = None,
 ) -> list[dict]:
     """`completion_findings` minus the ones the completion inherited unchanged
-    from the scenario's starter -- a completion finding whose (rule id, source
-    line) also occurs in the starter's findings sits on a line the completion
-    never touched, so M1 must not charge it (issue #31). On an edit task the
-    old behaviour rewarded breaching X2/X3: renaming a starter's public symbol
-    cleared the finding, leaving it alone kept it.
+    from the scenario's starter -- a finding on a line the completion never
+    touched sits outside the edit, so M1 must not charge it (issue #31). On an
+    edit task the old behaviour rewarded breaching X2/X3: renaming a starter's
+    public symbol cleared the finding, leaving it alone kept it.
 
-    Matched as a multiset: a completion that introduces a second empty-word
-    name identical to one the starter already flagged still takes the new one,
-    and so does one that reintroduces a flagged line inside a function it
-    rewrote. Returns `completion_findings` unchanged when `starter_findings` is
-    None or empty -- a scenario with no starter matching output_file (01, 04,
-    05, 06, 08) is unaffected."""
+    With both sources given, a starter finding is inherited only when its line
+    survived the edit in place (difflib `equal` block) and the completion has a
+    finding with the same rule id and text on the mapped line. A starter
+    function the completion deleted takes its findings with it, so a fresh
+    violation the completion wrote on a coincidentally identical line still
+    counts (issue #34). Without the sources, falls back to matching by
+    (rule id, text) as a multiset.
+
+    Returns `completion_findings` unchanged when `starter_findings` is None or
+    empty -- a scenario with no starter matching output_file (01, 04, 05, 06,
+    08) is unaffected."""
     if not starter_findings:
         return list(completion_findings)
-    inherited = Counter(_finding_signature(f) for f in starter_findings)
-    introduced: list[dict] = []
+
+    if starter_source is None or completion_source is None:
+        inherited = Counter(_finding_signature(f) for f in starter_findings)
+        introduced: list[dict] = []
+        for finding in completion_findings:
+            signature = _finding_signature(finding)
+            if inherited[signature] > 0:
+                inherited[signature] -= 1
+                continue
+            introduced.append(finding)
+        return introduced
+
+    retained_line = _retained_line_map(starter_source, completion_source)
+    inherited_on_mapped_line: Counter[tuple[str, str, int]] = Counter()
+    for finding in starter_findings:
+        mapped_line = retained_line.get(finding.get("line"))
+        if mapped_line is None:
+            continue
+        rule_id, matched_text = _finding_signature(finding)
+        inherited_on_mapped_line[(rule_id, matched_text, mapped_line)] += 1
+
+    introduced = []
     for finding in completion_findings:
-        signature = _finding_signature(finding)
-        if inherited[signature] > 0:
-            inherited[signature] -= 1
+        rule_id, matched_text = _finding_signature(finding)
+        key = (rule_id, matched_text, finding.get("line"))
+        if inherited_on_mapped_line[key] > 0:
+            inherited_on_mapped_line[key] -= 1
             continue
         introduced.append(finding)
     return introduced
@@ -1021,7 +1076,12 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
 
     introduced = None
     if findings is not None:
-        introduced = findings_introduced(findings, starter_findings_for(scenario))
+        introduced = findings_introduced(
+            findings,
+            starter_findings_for(scenario),
+            starter_for_output_file(scenario),
+            code,
+        )
 
     findings_per_100_loc = None
     if introduced is not None and loc:

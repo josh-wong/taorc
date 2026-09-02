@@ -96,10 +96,13 @@ for the reasoning and the limitation.
 ## What M1 counts
 
 M1 is `taorc-lint` findings per 100 LOC, skill vs. baseline. `score.py` counts
-only the findings a completion *introduced*: a finding whose rule id and source
-line both match one in the scenario's starter is inherited unchanged, sits on a
-line the completion never edited, and is not charged to it (issue #31). The
-starter is resolved by `starter_for_output_file`, the same way the M3 diff
+only the findings a completion *introduced*: a finding is inherited, and not
+charged, only when the starter line it sits on survived the edit in place — a
+`difflib` `equal` block of two or more lines maps that starter line to the
+completion line the same rule and text fired on (issue #31). A starter function
+the completion deleted takes its findings with it, so a fresh violation the
+completion wrote on a coincidentally identical line still counts (issue #34).
+The starter is resolved by `starter_for_output_file`, the same way the M3 diff
 metric picks which file a completion edits, so a scenario with no starter
 matching `output_file` (01, 04, 05, 06, 08) is unaffected.
 
@@ -107,7 +110,7 @@ Without this, an edit task rewarded breaching `X2`/`X3`: a completion that
 renamed a starter's public symbol cleared the finding and scored better, while
 one that correctly left it alone kept the finding and scored worse. A name the
 completion genuinely introduces still counts, including one in a function it
-rewrote — only a finding matched line-for-line against the starter is excluded.
+rewrote — only a finding on a line the edit carried through untouched is excluded.
 `scores.json` carries both `lint_findings` (introduced) and
 `lint_findings_total` so a reader can see what was excluded.
 

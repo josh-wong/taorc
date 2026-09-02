@@ -5,9 +5,10 @@ Covers reconstruct_edited_file, the M3 fix (#23): the diff-size metric must
 measure the edit a completion represents, not whether the model echoed the
 whole starter file or returned only the changed function.
 
-Also covers findings_introduced, the M1 fix (#31): a lint finding a completion
-inherited unchanged from the scenario's starter is not charged to the
-completion.
+Also covers findings_introduced, the M1 fix (#31, #34): a lint finding a
+completion inherited unchanged from the scenario's starter is not charged to
+the completion, but a fresh one on a line matching a starter finding the
+completion deleted still is.
 
 Uses stdlib unittest to match the rest of this repo's tests (see
 scripts/tests/test_installer.py) -- nothing here depends on a test framework
@@ -399,6 +400,62 @@ class FindingsIntroducedTest(unittest.TestCase):
         introduced = findings_introduced(rewrote_the_function_and_kept_the_name, starter)
 
         self.assertEqual(introduced, [_finding("N1", "result = {}")])
+
+    def test_new_violation_on_a_line_matching_a_deleted_starter_finding_is_counted(self):
+        """The starter flags `data = []` inside a function the completion
+        deletes outright; the completion writes an unrelated new function that
+        also contains `data = []`. The deleted line is not retained, so the new
+        finding is charged to the completion (#34)."""
+        starter_source = (
+            '"""Old module."""\n\n\n'
+            "def summarise_orders(orders):\n"
+            "    data = []\n"
+            "    for order in orders:\n"
+            "        data.append(order.total)\n"
+            "    return sum(data) / len(data)\n"
+        )
+        completion_source = (
+            '"""Old module."""\n\n\n'
+            "def average_shipping_cost(shipments):\n"
+            "    data = []\n"
+            "    for shipment in shipments:\n"
+            "        data.append(shipment.cost)\n"
+            "    return sum(data) / len(data)\n"
+        )
+        starter = [{"id": "N1", "matched": "data = []", "line": 5}]
+        completion = [{"id": "N1", "matched": "data = []", "line": 5}]
+
+        introduced = findings_introduced(
+            completion, starter, starter_source, completion_source
+        )
+
+        self.assertEqual(introduced, completion)
+
+    def test_finding_on_a_retained_line_is_still_excluded_with_sources(self):
+        """The completion leaves `process_data` untouched and edits a different
+        function, so the inherited N1 on its signature is not charged."""
+        starter_source = (
+            "def process_data(data):\n"
+            "    cleaned = [row for row in data if row]\n"
+            "    return cleaned\n\n\n"
+            "def report(rows):\n"
+            "    print(len(rows))\n"
+        )
+        completion_source = (
+            "def process_data(data):\n"
+            "    cleaned = [row for row in data if row]\n"
+            "    return cleaned\n\n\n"
+            "def report(rows):\n"
+            "    print(f'{len(rows)} rows')\n"
+        )
+        starter = [{"id": "N1", "matched": "def process_data(data):", "line": 1}]
+        completion = [{"id": "N1", "matched": "def process_data(data):", "line": 1}]
+
+        introduced = findings_introduced(
+            completion, starter, starter_source, completion_source
+        )
+
+        self.assertEqual(introduced, [])
 
     def test_same_line_but_a_different_rule_is_counted(self):
         starter = [_finding("N1", "value = payload.get(field)")]
