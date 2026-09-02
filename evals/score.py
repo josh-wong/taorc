@@ -338,6 +338,47 @@ def _prologue_lines(tree: ast.Module, source_lines: list[str]) -> set[str]:
     return prologue
 
 
+def _bound_names(node: ast.stmt) -> frozenset[str]:
+    """The module-level names an import or assignment binds, or an empty set for
+    a target this merge will not match on -- an attribute or a subscript. Two
+    prologue statements that bind exactly the same names are two versions of one
+    decision, so the completion's is a replacement rather than an addition."""
+    if isinstance(node, ast.Import):
+        return frozenset(alias.asname or alias.name.split(".")[0] for alias in node.names)
+    if isinstance(node, ast.ImportFrom):
+        return frozenset(
+            alias.asname or alias.name for alias in node.names if alias.name != "*"
+        )
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    names: set[str] = set()
+    for target in targets:
+        elements = target.elts if isinstance(target, (ast.Tuple, ast.List)) else [target]
+        for element in elements:
+            if not isinstance(element, ast.Name):
+                return frozenset()
+            names.add(element.id)
+    return frozenset(names)
+
+
+def _prologue_spans_by_bound_names(
+    tree: ast.Module,
+) -> dict[frozenset[str], tuple[int, int]]:
+    """bound names -> (first_line, last_line) for each import or assignment in
+    the module's prologue, first one wins. The scan stops at the first
+    definition, matching the half of the file merge_completion_prologue writes
+    into."""
+    spans: dict[frozenset[str], tuple[int, int]] = {}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            break
+        if not isinstance(node, (ast.Import, ast.ImportFrom, ast.Assign, ast.AnnAssign)):
+            continue
+        names = _bound_names(node)
+        if names and names not in spans:
+            spans[names] = (node.lineno, node.end_lineno)
+    return spans
+
+
 def _completion_echoes_an_unchanged_definition(
     starter_spans: dict[str, tuple[int, int]],
     completion_spans: dict[str, tuple[int, int]],
@@ -421,8 +462,16 @@ def _line_after_shebang(source_lines: list[str]) -> int:
     completion opens with is as likely to be the `why` for the constant under
     it as a file header, and keeping it is the cheaper mistake. A `#!` line is
     a header either way, and copying one into the middle of a file is damage a
-    judge can see."""
-    return 1 if source_lines and source_lines[0].startswith("#!") else 0
+    judge can see.
+
+    The scan starts at the first non-blank line: extract_code keeps whatever
+    blank line the fenced body opened with, and reading line 0 alone would let
+    one blank ahead of the shebang hide it."""
+    for index, line in enumerate(source_lines):
+        if not line.strip():
+            continue
+        return index + 1 if line.startswith("#!") else 0
+    return 0
 
 
 def _first_line_of_leading_comments(
@@ -447,6 +496,17 @@ def _opens_a_definition(line: str) -> bool:
     return line.startswith(("def ", "async def ", "class ", "@"))
 
 
+def _definition_follows(after: list[str]) -> bool:
+    """True when the first thing below the insertion point is a definition,
+    looking past the comment block that definition owns. A `def` under its own
+    `why` comment is still a `def`, and reading only the comment line would
+    leave it the one blank line an ordinary statement gets."""
+    for line in after:
+        if not line.lstrip().startswith("#"):
+            return _opens_a_definition(line)
+    return False
+
+
 def _inserted_with_blank_lines(lines: list[str], insert_at: int, block: list[str]) -> list[str]:
     """`lines` with `block` inserted at 0-indexed `insert_at`, held apart from
     its new neighbours by a blank line -- two where a definition follows, which
@@ -457,7 +517,7 @@ def _inserted_with_blank_lines(lines: list[str], insert_at: int, block: list[str
     if before and before[-1].strip():
         spaced.insert(0, "")
     if after and after[0].strip():
-        spaced.extend(["", ""] if _opens_a_definition(after[0]) else [""])
+        spaced.extend(["", ""] if _definition_follows(after) else [""])
     return before + spaced + after
 
 
@@ -757,8 +817,16 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
     which would let a constant coincide with an indented line inside some
     function body and be dropped as already present.
 
+    A statement that binds exactly the names one of the spliced file's own
+    prologue statements binds replaces it in place. Adding it instead would
+    define the name twice: a completion that retunes `MAX_LINES = 50` to 100
+    would be graded on a file carrying both, so the completion that did the
+    right thing reads as the broken one. The completion's leading comments
+    replace the starter's only when it wrote some, leaving a starter `why`
+    comment standing over a constant whose value alone changed.
+
     Returns spliced_source unchanged when either side fails to parse or the
-    completion's prologue adds nothing.
+    completion's prologue neither adds nor replaces anything.
     """
     try:
         spliced_tree = ast.parse(spliced_source)
@@ -769,10 +837,13 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
     spliced_lines = spliced_source.splitlines()
     completion_lines = completion_code.splitlines()
     prologue_already_spliced = _prologue_lines(spliced_tree, spliced_lines)
+    spliced_spans_by_name = _prologue_spans_by_bound_names(spliced_tree)
+    spliced_header_end = _line_after_shebang(spliced_lines)
     completion_header_end = _line_after_shebang(completion_lines)
 
     future_import_lines: list[str] = []
     added_lines: list[str] = []
+    replacements: list[tuple[tuple[int, int], list[str]]] = []
     line_after_last_added = 0
     for node in completion_tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -798,6 +869,16 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
             future_import_lines.extend(with_its_comment)
             line_after_last_added = node.end_lineno + 1
             continue
+        replaced_span = spliced_spans_by_name.get(_bound_names(node))
+        if replaced_span is not None:
+            replaced_first_line = replaced_span[0]
+            if first_line < node.lineno:
+                replaced_first_line = _first_line_of_leading_comments(
+                    spliced_lines, replaced_first_line, spliced_header_end
+                )
+            replacements.append(((replaced_first_line, replaced_span[1]), with_its_comment))
+            line_after_last_added = node.end_lineno + 1
+            continue
         # A blank line the completion left between two of these statements is
         # the grouping its author chose, and the spans alone would run them
         # together. M2 grades layout, so the merge must not invent its own.
@@ -806,20 +887,35 @@ def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
         added_lines.extend(with_its_comment)
         line_after_last_added = node.end_lineno + 1
 
-    if not added_lines and not future_import_lines:
+    if not added_lines and not future_import_lines and not replacements:
         return spliced_source
 
+    # Bottom-up, so a replacement that changes a statement's line count has not
+    # moved the span of the one above it.
     merged_lines = spliced_lines
+    for (first_line, last_line), block in sorted(replacements, reverse=True):
+        merged_lines = merged_lines[: first_line - 1] + block + merged_lines[last_line:]
+
+    if not added_lines and not future_import_lines:
+        return "\n".join(merged_lines) + "\n"
+
+    # Re-parsed rather than measured off spliced_tree: the replacements above
+    # moved every line below the first of them.
+    try:
+        merged_tree = ast.parse("\n".join(merged_lines))
+    except SyntaxError:
+        return "\n".join(merged_lines) + "\n"
+
     if added_lines:
         merged_lines = _inserted_with_blank_lines(
-            merged_lines, _line_after_prologue(spliced_tree, spliced_lines), added_lines
+            merged_lines, _line_after_prologue(merged_tree, merged_lines), added_lines
         )
     # Inserted second, and at a line at or above the one the prologue merge
     # used, so the earlier insertion has not moved the index out from under it.
     if future_import_lines:
         merged_lines = _inserted_with_blank_lines(
             merged_lines,
-            _line_for_future_import(spliced_tree, spliced_lines),
+            _line_for_future_import(merged_tree, merged_lines),
             future_import_lines,
         )
     return "\n".join(merged_lines) + "\n"
