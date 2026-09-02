@@ -1,0 +1,14 @@
+{
+  "scenario_id": "04-write-tests",
+  "model_slot": "claude",
+  "model_id": "claude-opus-5",
+  "provider": "anthropic",
+  "condition": "baseline",
+  "skill_artifact": null,
+  "sampler": {
+    "max_tokens": 4000,
+    "temperature": "model default (override rejected by API)",
+    "top_p": "model default (override rejected by API)"
+  },
+  "generated_at": "2026-08-29T09:39:26.161938+00:00"
+}

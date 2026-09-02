@@ -1,0 +1,42 @@
+{
+  "suite_fully_scored": true,
+  "classifier_model_slot": "claude",
+  "skill_name": "readable-code",
+  "skill_description": "Write, comment, and review code so the next reader understands it in the least time. Applies on any code-writing, editing, refactoring, or code-review task, and specifically when naming things, writing or editing comments and docstrings, simplifying conditionals, or writing tests. Also use when asked to \"make this readable\", \"clean up the comments\", \"review this for readability\", \"improve these names\", \"humanize this code\", \"make it look like a person wrote it\", or when removing AI-generated code tells such as step-by-step narration comments, banner comments, boilerplate that reads as machine-written, or empty names like data, result, and handler. Based on The Art of Readable Code (Boswell & Foucher).",
+  "classifier_sampler": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_tokens": 1000
+  },
+  "counts": {
+    "positives_classified": 60,
+    "negatives_classified": 40
+  },
+  "activation_rate_pct": 100.0,
+  "false_fire_rate_pct": 0.0,
+  "m4_targets": {
+    "activation_rate_pct": ">=90",
+    "false_fire_rate_pct": "<=10"
+  },
+  "meets_m4": true,
+  "false_fire_by_negative_category": {
+    "prose-readability": {
+      "total": 10,
+      "false_fires": 0
+    },
+    "code-explanation": {
+      "total": 5,
+      "false_fires": 0
+    },
+    "other": {
+      "total": 25,
+      "false_fires": 0
+    }
+  },
+  "positives_not_activated": [],
+  "negatives_activated": [],
+  "generated_at": "2026-09-01T12:01:34.043083+00:00",
+  "classification_failures": 0,
+  "failed_prompt_ids": [],
+  "limited_to_first_n": null
+}

@@ -48,6 +48,13 @@ A model with no key set is skipped with a warning rather than failing the
 run, so you can gather keys incrementally. Use `--dry-run` on `run_bench.py`
 to see what would be sent without calling anything or spending money.
 
+A tuning run does not need to re-bill the baseline condition: it does not
+depend on the skill. Copy the previous run's `raw/*/*/baseline.*` into the new
+run directory and `run_bench.py` keeps them (they are already on disk) while
+generating only the skill cells. Their `meta.json` keeps the original
+generation timestamp, so the reuse stays auditable — say so in `RESULTS.md`,
+as `results/2026-09-01/` does.
+
 Both `run_bench.py` and `judge.py` resume: a completion or judgment already
 on disk is kept, not re-billed, so an interrupted run finishes by being
 re-invoked with the same `--out`/`--run`. Pass `--force` to regenerate. A
@@ -55,6 +62,19 @@ generation that fails leaves a `<condition>.error.json`, which `score.py`
 lists under `generation_errors` so a missing cell reads as a known gap
 rather than a zero. Transient provider errors (timeouts, 429/5xx) are
 retried with backoff before a cell is given up on.
+
+`judge.py` compares the file each completion *leaves behind*, not the text the
+model printed: a completion that returns only the function it changed is
+spliced onto the starter first (`code_as_left_on_disk`, sharing `score.py`'s
+`reconstruct_edited_file`). Without it a completion following `X1` on an edit
+task is judged as a bare fragment against one that echoed the whole module —
+a difference in output format, not readability.
+
+`judge.py --label <name>` writes to `judgments-<name>/` and
+`judge_summary-<name>.json` instead of the default names. Use it to re-score a
+published run after a judging-method change, so its original numbers stay on
+disk to compare against; `results/2026-08-29/judgments-fixed/` is that re-score
+for the fragment fix above.
 
 Sampler settings are fixed in `evallib/models.py`'s `DEFAULT_SAMPLER` and
 written into every completion's `.meta.json` — copy them into `RESULTS.md`

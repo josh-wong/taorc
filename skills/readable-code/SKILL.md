@@ -6,9 +6,11 @@ description: >
   and specifically when naming things, writing or editing comments and
   docstrings, simplifying conditionals, or writing tests. Also use when asked to
   "make this readable", "clean up the comments", "review this for readability",
-  "improve these names", or when removing AI-generated code tells such as
-  step-by-step narration comments, banner comments, or empty names like data,
-  result, and handler. Based on The Art of Readable Code (Boswell & Foucher).
+  "improve these names", "humanize this code", "make it look like a person wrote
+  it", or when removing AI-generated code tells such as step-by-step narration
+  comments, banner comments, boilerplate that reads as machine-written, or empty
+  names like data, result, and handler. Based on The Art of Readable Code
+  (Boswell & Foucher).
 license: MIT
 metadata:
   version: "0.1.0"
@@ -30,6 +32,11 @@ your own plan in comments, naming things `data` and `result`, wrapping a single
 call in a helper "for reusability" — costs a future reader time. Treat naming
 and commenting as decisions you make while writing, not as a pass you do
 afterward.
+
+The correction runs both ways, and overshooting costs the same reader the same
+time. Deleting the docstring that told a caller what comes back on empty input,
+or naming a subexpression that already read clearly, is not a cleaner file. It
+is a different kind of noise.
 
 ## When this applies
 
@@ -151,6 +158,10 @@ A comment's job is to carry what the code cannot.
 | `C17` | Label a mysterious function argument inline at the call site                 |
 | `C18` | Reach for an established term of art instead of describing it from scratch   |
 
+Sixteen of these eighteen rules ask you to write or sharpen a comment. Only
+`C1` deletes one, and only `C2` trades one for a better name. A file you left
+with fewer comments than you found has not automatically improved.
+
 Control flow should read in the order the reader thinks.
 
 | ID   | Rule                                                                            |
@@ -173,6 +184,10 @@ Break big expressions into pieces a reader can hold in mind.
 | `E4` | State a condition directly instead of comparing against a boolean or a length |
 | `E5` | Break a large expression into named steps rather than one clever line         |
 | `E6` | Do not use short-circuit operators to make one line do two jobs               |
+
+A name earns its line by saying more than the expression it replaced. When it
+does not, `V1` takes it back out — `E1` and `V1` are the two halves of one
+judgment, not rules that disagree.
 
 Every live variable is something the reader has to track.
 
@@ -224,6 +239,11 @@ reviewer time.
 | `X7` | Do not narrate your own plan or process in code comments                        |
 | `X8` | Do not add banner comments, section dividers, or emoji to code                  |
 
+`X1` bounds which code you touch, not how you structure the code you were asked
+to change. In `refactor` mode the named target is the task: collapsing its
+helpers back into one function to keep the diff short is not `X1` being
+respected, it is the task left undone.
+
 ## Precedence
 
 When two rules point in different directions, resolve in this order. Earlier
@@ -240,16 +260,16 @@ entries win.
 Run this before presenting any code. The questions are ordered by how often
 they catch something.
 
-1. Does any comment restate what the line below it does? Delete it. (`C1`)
-2. Does any comment narrate your plan — "Step 1", "First, we"? Delete it. (`X7`)
+1. Does any comment restate the line below it, or narrate your plan — "Step 1", "First, we"? Delete it. (`C1`, `X7`)
+2. Is any name an empty word — `data`, `result` — or a role word — `handler`, `manager`? (`N1`, `N9`)
 3. Would a new reader know the unit of every number you named? (`N3`)
-4. Is any name an empty word — `data`, `result` — or a role word — `handler`, `manager`? (`N1`, `N9`)
+4. For each function you added, can a caller tell what it returns on empty or boundary input and when it raises? Do not document one the task did not change. (`C14`, `X1`)
 5. Is any non-obvious decision left unexplained? Add the *why*. (`C6`)
-6. Can any nested block become a guard clause? (`F5`, `F6`)
-7. Is any boolean expression more than three terms? (`E1`)
+6. Did you introduce a name used once that says no more than the expression it replaced? Inline it. (`V1`)
+7. Can a nested block become a guard clause, or a long condition a named one? (`F5`, `F6`, `E1`)
 8. Does any function do more than one thing a one-sentence description covers? (`S3`)
 9. Do your test names say the scenario and the expected result? (`T3`)
-10. Did you change anything the task did not require? (`X1`)
+10. Did you change anything the task did not require — a signature, a behavior, a file? (`X1`, `X3`, `X4`)
 
 ## Reference map
 

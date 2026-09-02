@@ -39,9 +39,14 @@ from evallib.models import (  # noqa: E402
     ModelSpec,
     generate,
 )
-from evallib.scenarios import load_all_scenarios  # noqa: E402
+from evallib.scenarios import Scenario, load_all_scenarios  # noqa: E402
 from run_bench import output_extension  # noqa: E402
-from score import extract_code  # noqa: E402
+from score import (  # noqa: E402
+    extract_code,
+    merge_completion_prologue,
+    reconstruct_edited_file,
+    starter_for_output_file,
+)
 
 JUDGE_SYSTEM_PROMPT = (
     "You are judging two versions of the same piece of code for one thing "
@@ -312,9 +317,91 @@ def judge_pair_repeatedly(
     return judgments
 
 
-def run_judging(run_dir: Path, force: bool, seed: int | None) -> dict:
+def starter_to_splice_onto(scenario: Scenario) -> str | None:
+    """The starter to reconstruct this scenario's completions against, or None
+    to judge them as printed.
+
+    Only the measure_diff_size scenarios qualify, which is the same gate
+    score.py applies at its own reconstruct_edited_file call, so both scoring
+    tracks splice the same pairs onto the same starters. The two do not read
+    identical bytes: judging also merges the completion's own prologue back in,
+    which score.py deliberately does not, since that would move M3 numbers
+    already published. The gate is not a
+    convention -- reconstruct_edited_file can add a definition and replace a
+    definition, but it has no way to express a deleted one, so on a scenario
+    whose task is removal it splices the removed code back in. 10-de-slop is
+    exactly that task: a completion that correctly deletes a slop helper and
+    returns the two functions it kept would be handed back to the judge with
+    the helper and its narration restored, and scored for slop it had
+    removed. 07-refactor-nesting is the same hazard one step milder.
+
+    Read the coupling as: splice only where the task is purely additive.
+    A scenario that gains measure_diff_size must be additive anyway, since M3
+    counts diff lines against the same reconstruction.
+
+    Returns None with a warning when measure_diff_size is set but no starter
+    matches output_file: the pair is still judged, as printed, so the silent
+    reading would be that this scenario's M2 number means what the spliced
+    ones mean. score.py warns on the same mismatch (#30)."""
+    if not scenario.measure_diff_size:
+        return None
+    starter_before = starter_for_output_file(scenario)
+    if starter_before is None:
+        print(
+            f"  WARNING {scenario.id}: measure_diff_size is set but no starter file "
+            f"matches output_file {scenario.output_file!r} -- judging both completions "
+            "as printed, so this pair's judgments carry the output-format confound",
+            file=sys.stderr,
+        )
+    return starter_before
+
+
+def code_as_left_on_disk(
+    completion_path: Path, completion_ext: str, starter_before: str | None
+) -> str:
+    """The file a judge should read: the starter as this completion leaves it.
+
+    Without this the judge compares whatever each model chose to print, so a
+    completion that returns only the function it changed -- what X1 asks for
+    on an edit task -- is judged as a bare fragment against a rival that
+    echoed the whole module. That is a difference in output format, not in
+    readability. score.py already splices fragments this way for M3 (#23);
+    M2 was left reading the raw completion.
+
+    Pass starter_before=None to judge the completion as printed -- see
+    starter_to_splice_onto for which scenarios must take that path.
+
+    The splice keeps the starter's prologue, so the completion's own imports
+    and module-level constants are merged back in afterwards; without that a
+    fragment is judged on code that cannot resolve the names it calls (#30).
+
+    Re-judging the 2026-08-29 baseline with this fix moved no verdict (M2 was
+    45.0% either way), so the confound was not what held M2 down -- worth
+    knowing before anyone spends a tuning cycle on it. That re-judge ran before
+    the splice was gated to the measure_diff_size scenarios, so it spliced more
+    scenarios than this does now; read it as evidence about the confound, not
+    as a check of the function as shipped. It stays because the
+    spliced file is still the honest thing to put in front of a judge, and a
+    future run's completions need not split the same way."""
+    code = extract_code(completion_path.read_text(encoding="utf-8"), completion_ext)
+    if starter_before is None:
+        return code
+    return merge_completion_prologue(reconstruct_edited_file(starter_before, code), code)
+
+
+
+
+def judgments_dir_for(run_dir: Path, label: str | None) -> Path:
+    return run_dir / ("judgments" if label is None else f"judgments-{label}")
+
+
+def summary_path_for(run_dir: Path, label: str | None) -> Path:
+    return run_dir / ("judge_summary.json" if label is None else f"judge_summary-{label}.json")
+
+
+def run_judging(run_dir: Path, force: bool, seed: int | None, label: str | None) -> dict:
     scenarios_by_id = {s.id: s for s in load_all_scenarios()}
-    judgments_dir = run_dir / "judgments"
+    judgments_dir = judgments_dir_for(run_dir, label)
     judgments_dir.mkdir(parents=True, exist_ok=True)
 
     preference_counts = {"skill": 0, "baseline": 0, "no_verdict": 0}
@@ -322,12 +409,17 @@ def run_judging(run_dir: Path, force: bool, seed: int | None) -> dict:
         "skill": {letter: [] for letter in RUBRIC_CATEGORIES},
         "baseline": {letter: [] for letter in RUBRIC_CATEGORIES},
     }
+    undecidable_pairs: list[str] = []
+    excluded_judgment_files: list[str] = []
     raw_dir = run_dir / "raw"
 
     for scenario_dir in sorted(raw_dir.iterdir()):
         scenario = scenarios_by_id.get(scenario_dir.name)
         if scenario is None:
             continue
+        # Per scenario, not per model slot: the answer is the same for every
+        # slot, and the warning inside would otherwise repeat once per model.
+        starter_before = starter_to_splice_onto(scenario)
         for model_dir in sorted(scenario_dir.iterdir()):
             completion_ext = output_extension(scenario)
             baseline_path = model_dir / f"baseline{completion_ext}"
@@ -335,8 +427,37 @@ def run_judging(run_dir: Path, force: bool, seed: int | None) -> dict:
             if not (baseline_path.exists() and skill_path.exists()):
                 continue
 
-            baseline_code = extract_code(baseline_path.read_text(encoding="utf-8"), completion_ext)
-            skill_code = extract_code(skill_path.read_text(encoding="utf-8"), completion_ext)
+            baseline_code = code_as_left_on_disk(baseline_path, completion_ext, starter_before)
+            skill_code = code_as_left_on_disk(skill_path, completion_ext, starter_before)
+
+            # A judge asked to prefer one of two identical files answers
+            # anyway, and the answer is position bias: on 2026-09-01 all four
+            # such judgments (02-fix-bug, both slots) picked whichever side
+            # was labelled A. Those landed in `decided` and moved M2 -- 28/40
+            # = 70.0% published, 26/36 = 72.2% with them out. The pair is
+            # listed in the summary rather than counted, because how many
+            # judgments it would have drawn depends on which judges answer.
+            if baseline_code == skill_code:
+                undecidable_pairs.append(f"{scenario.id}/{model_dir.name}")
+                # Judgments this pair drew before it became undecidable stay on
+                # disk -- they are real records of calls that were made, and
+                # R7.4 traceability is worse served by deleting evidence than
+                # by a summary that counts fewer judgments than judgments/
+                # holds files. Naming them is what keeps the two artifacts from
+                # disagreeing silently (#30).
+                excluded_judgment_files.extend(
+                    sorted(
+                        path.name
+                        for path in judgments_dir.glob(
+                            f"{scenario.id}__{model_dir.name}__*.json"
+                        )
+                    )
+                )
+                print(
+                    f"  {scenario.id} / {model_dir.name}: both conditions left the "
+                    "same file -- undecidable, not judged and not billed"
+                )
+                continue
 
             judgments = judge_pair_repeatedly(
                 scenario.id,
@@ -356,6 +477,8 @@ def run_judging(run_dir: Path, force: bool, seed: int | None) -> dict:
     return {
         "preference_counts": preference_counts,
         "rubric_means": summarize_rubric(rubric_samples),
+        "undecidable_pairs": undecidable_pairs,
+        "excluded_judgment_files": excluded_judgment_files,
     }
 
 
@@ -378,17 +501,24 @@ def main() -> int:
         help="re-run judgments that are already saved (default: reuse them, so an "
         "interrupted judging pass resumes without re-billing)",
     )
+    parser.add_argument(
+        "--label",
+        default=None,
+        help="write to judgments-<label>/ and judge_summary-<label>.json instead of "
+        "the default names, so re-judging a published run under a changed judging "
+        "method leaves its original numbers on disk to compare against",
+    )
     args = parser.parse_args()
 
     run_dir = Path(args.run)
     if not (run_dir / "raw").is_dir():
         parser.error(f"{run_dir} has no raw/ directory -- run run_bench.py first")
 
-    outcome = run_judging(run_dir, args.force, args.seed)
+    outcome = run_judging(run_dir, args.force, args.seed, args.label)
     counts = outcome["preference_counts"]
     rubric_means = outcome["rubric_means"]
 
-    summary_path = run_dir / "judge_summary.json"
+    summary_path = summary_path_for(run_dir, args.label)
     summary_path.write_text(json.dumps(outcome, indent=2), encoding="utf-8")
     print(f"wrote {summary_path}")
 
@@ -400,6 +530,20 @@ def main() -> int:
             "judgments (M2 target >= 70%)"
         )
     print(f"counts: {counts}")
+    undecidable_pairs = outcome["undecidable_pairs"]
+    if undecidable_pairs:
+        print(
+            f"{len(undecidable_pairs)} pair(s) not judged, both conditions left the "
+            f"same file: {', '.join(undecidable_pairs)}"
+        )
+    excluded_judgment_files = outcome["excluded_judgment_files"]
+    if excluded_judgment_files:
+        print(
+            f"{len(excluded_judgment_files)} judgment file(s) from an earlier pass "
+            f"belong to those pairs and stay in {judgments_dir_for(run_dir, args.label).name}/ "
+            "without being counted; they are listed in the summary as "
+            "excluded_judgment_files"
+        )
     for letter, means in rubric_means.items():
         print(
             f"  rubric {letter} ({means['category']}): skill {means['skill_mean']} vs "

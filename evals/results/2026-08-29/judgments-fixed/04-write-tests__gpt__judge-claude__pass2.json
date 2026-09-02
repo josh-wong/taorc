@@ -1,0 +1,39 @@
+{
+  "judge_model_id": "claude-opus-5",
+  "skill_labeled": "A",
+  "raw_response": "{\n  \"preference\": \"A\",\n  \"rubric_a\": {\n    \"N\": 5,\n    \"C\": 4,\n    \"F\": 5,\n    \"S\": 4,\n    \"T\": 5\n  },\n  \"rubric_b\": {\n    \"N\": 4,\n    \"C\": 4,\n    \"F\": 4,\n    \"S\": 4,\n    \"T\": 4\n  }\n}",
+  "parsed": {
+    "preference": "A",
+    "rubric_a": {
+      "N": 5,
+      "C": 4,
+      "F": 5,
+      "S": 4,
+      "T": 5
+    },
+    "rubric_b": {
+      "N": 4,
+      "C": 4,
+      "F": 4,
+      "S": 4,
+      "T": 4
+    }
+  },
+  "preferred_condition": "skill",
+  "rubric_by_condition": {
+    "skill": {
+      "N": 5,
+      "C": 4,
+      "F": 5,
+      "S": 4,
+      "T": 5
+    },
+    "baseline": {
+      "N": 4,
+      "C": 4,
+      "F": 4,
+      "S": 4,
+      "T": 4
+    }
+  }
+}

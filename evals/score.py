@@ -338,6 +338,47 @@ def _prologue_lines(tree: ast.Module, source_lines: list[str]) -> set[str]:
     return prologue
 
 
+def _bound_names(node: ast.stmt) -> frozenset[str]:
+    """The module-level names an import or assignment binds, or an empty set for
+    a target this merge will not match on -- an attribute or a subscript. Two
+    prologue statements that bind exactly the same names are two versions of one
+    decision, so the completion's is a replacement rather than an addition."""
+    if isinstance(node, ast.Import):
+        return frozenset(alias.asname or alias.name.split(".")[0] for alias in node.names)
+    if isinstance(node, ast.ImportFrom):
+        return frozenset(
+            alias.asname or alias.name for alias in node.names if alias.name != "*"
+        )
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    names: set[str] = set()
+    for target in targets:
+        elements = target.elts if isinstance(target, (ast.Tuple, ast.List)) else [target]
+        for element in elements:
+            if not isinstance(element, ast.Name):
+                return frozenset()
+            names.add(element.id)
+    return frozenset(names)
+
+
+def _prologue_spans_by_bound_names(
+    tree: ast.Module,
+) -> dict[frozenset[str], tuple[int, int]]:
+    """bound names -> (first_line, last_line) for each import or assignment in
+    the module's prologue, first one wins. The scan stops at the first
+    definition, matching the half of the file merge_completion_prologue writes
+    into."""
+    spans: dict[frozenset[str], tuple[int, int]] = {}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            break
+        if not isinstance(node, (ast.Import, ast.ImportFrom, ast.Assign, ast.AnnAssign)):
+            continue
+        names = _bound_names(node)
+        if names and names not in spans:
+            spans[names] = (node.lineno, node.end_lineno)
+    return spans
+
+
 def _completion_echoes_an_unchanged_definition(
     starter_spans: dict[str, tuple[int, int]],
     completion_spans: dict[str, tuple[int, int]],
@@ -368,6 +409,116 @@ def _lines_in_span(source_lines: list[str], span: tuple[int, int]) -> list[str]:
 
 def _leading_whitespace(line: str) -> str:
     return line[: len(line) - len(line.lstrip())]
+
+
+def _is_docstring(node: ast.stmt) -> bool:
+    return (
+        isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    )
+
+
+def _line_after_comment_header(source_lines: list[str]) -> int:
+    """The 0-indexed line just past the comment block a file opens with -- a
+    shebang, a license header -- or 0 when it opens with anything else.
+    Inserting above a shebang demotes it to an ordinary comment, which leaves
+    the file no longer executable as a script and reads as damage to a judge
+    grading layout."""
+    past_header = 0
+    for line in source_lines:
+        if not line.lstrip().startswith("#"):
+            break
+        past_header += 1
+    return past_header
+
+
+def _line_after_prologue(tree: ast.Module, source_lines: list[str]) -> int:
+    """The 0-indexed line to insert another prologue statement at: just past
+    the module's last leading import or assignment, or just past the opening
+    comment header when the file goes straight from that into a definition."""
+    insert_at = _line_after_comment_header(source_lines)
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            break
+        insert_at = node.end_lineno
+    return insert_at
+
+
+def _line_for_future_import(tree: ast.Module, source_lines: list[str]) -> int:
+    """The 0-indexed line a `from __future__` import has to go at or before:
+    just past the module docstring, or past the opening comment header when the
+    file has no docstring. A docstring is the only statement Python lets precede
+    a future import, and a comment is not a statement at all."""
+    if tree.body and _is_docstring(tree.body[0]):
+        return tree.body[0].end_lineno
+    return _line_after_comment_header(source_lines)
+
+
+def _line_after_shebang(source_lines: list[str]) -> int:
+    """The 0-indexed line just past a file's shebang, or 0 when it has none.
+
+    Only the shebang, not the whole opening comment block: a comment block a
+    completion opens with is as likely to be the `why` for the constant under
+    it as a file header, and keeping it is the cheaper mistake. A `#!` line is
+    a header either way, and copying one into the middle of a file is damage a
+    judge can see.
+
+    The scan starts at the first non-blank line: extract_code keeps whatever
+    blank line the fenced body opened with, and reading line 0 alone would let
+    one blank ahead of the shebang hide it."""
+    for index, line in enumerate(source_lines):
+        if not line.strip():
+            continue
+        return index + 1 if line.startswith("#!") else 0
+    return 0
+
+
+def _first_line_of_leading_comments(
+    source_lines: list[str], first_line: int, header_end: int = 0
+) -> int:
+    """The 1-indexed line the comment block above a statement starts on, or
+    `first_line` when code or blank space sits directly above it. A statement's
+    ast span starts at the statement itself, so merging by span alone strips the
+    `why` comment C5 asks for off the constant it explains.
+
+    Stops at `header_end` -- see _line_after_shebang. A completion whose first
+    import sits directly under its own shebang would otherwise carry that line
+    into the middle of the spliced file, the same layout damage
+    _line_after_comment_header keeps the starter's header safe from, arriving
+    from the completion side."""
+    while first_line - 1 > header_end and source_lines[first_line - 2].lstrip().startswith("#"):
+        first_line -= 1
+    return first_line
+
+
+def _opens_a_definition(line: str) -> bool:
+    return line.startswith(("def ", "async def ", "class ", "@"))
+
+
+def _definition_follows(after: list[str]) -> bool:
+    """True when the first thing below the insertion point is a definition,
+    looking past the comment block that definition owns. A `def` under its own
+    `why` comment is still a `def`, and reading only the comment line would
+    leave it the one blank line an ordinary statement gets."""
+    for line in after:
+        if not line.lstrip().startswith("#"):
+            return _opens_a_definition(line)
+    return False
+
+
+def _inserted_with_blank_lines(lines: list[str], insert_at: int, block: list[str]) -> list[str]:
+    """`lines` with `block` inserted at 0-indexed `insert_at`, held apart from
+    its new neighbours by a blank line -- two where a definition follows, which
+    is what a formatter would leave. Adds no blank line at the start or end of
+    the file, or where the neighbour is already blank."""
+    before, after = lines[:insert_at], lines[insert_at:]
+    spaced = list(block)
+    if before and before[-1].strip():
+        spaced.insert(0, "")
+    if after and after[0].strip():
+        spaced.extend(["", ""] if _definition_follows(after) else [""])
+    return before + spaced + after
 
 
 def _starter_method_spans(
@@ -498,7 +649,26 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     only the changed or added function is applied onto the starter: a top-level
     definition with a matching name replaces the original, a new one is
     appended, one dropped from inside the rewritten region is deleted, and
-    anything else the completion never mentions stays byte-for-byte."""
+    anything else the completion never mentions stays byte-for-byte.
+
+    Three limits worth knowing before reusing this for anything but M3:
+
+    A new definition goes at the end of the file, whatever placement the
+    completion asked for -- a fragment that adds one function alone carries no
+    structural anchor, and only its surrounding prose says where it belongs.
+    Harmless for M3, which counts diff lines. Not harmless for judging, where
+    the F and S rubric categories grade reading order, so a judge scores the
+    layout this function chose rather than the model's.
+
+    The rebuilt file carries the starter's prologue, not the completion's, so
+    an import or module-level constant the fragment added is dropped -- one
+    uncounted diff line for M3, but code that no longer resolves its own names
+    for anyone else. merge_completion_prologue puts those lines back.
+
+    Deletion cannot be expressed at all except inside a region the completion
+    rewrote wholesale. Splicing a completion whose task was removal restores
+    what it removed; judge.py's starter_to_splice_onto exists to keep that
+    off the removal-shaped scenarios."""
     try:
         starter_tree = ast.parse(starter_source)
         completion_tree = ast.parse(completion_code)
@@ -604,11 +774,161 @@ def reconstruct_edited_file(starter_source: str, completion_code: str) -> str:
     return "\n".join(rebuilt) + "\n"
 
 
-def _starter_for_output_file(scenario: Scenario) -> str | None:
+def merge_completion_prologue(spliced_source: str, completion_code: str) -> str:
+    """`spliced_source` with every import and module-level assignment the
+    completion added but the splice dropped, inserted below the prologue the
+    file already has -- above it for a `from __future__` import, the one
+    statement Python accepts nowhere else.
+
+    reconstruct_edited_file rebuilds a fragment from the starter's lines plus
+    the completion's definitions, which loses the completion's own prologue.
+    M3 only undercounts a line for that. A judge is handed code that cannot
+    resolve its own names: a completion that adds `import logging` and a
+    module-level `logger`, then follows X1 by printing only the function it
+    changed, is graded on a file where `logger` is undefined -- the output-format
+    confound that splicing exists to remove, in a worse form.
+
+    Imports and assignments are the only statements merged. Anything else a
+    completion leaves at module level runs rather than defines -- an
+    `if __name__ == "__main__"` guard, a demo call -- and the merge inserts
+    above the file's definitions, so merging one would hand the judge a file
+    that raises NameError on the function it sits above. A module docstring is
+    left out for its own reason: the starter's already stands, and a second one
+    lands mid-file as a stray expression.
+
+    Only the completion's own prologue is read: the scan stops at its first
+    definition, because the same insert-above-the-definitions rule makes an
+    assignment the completion wrote below its functions -- a dispatch table
+    naming them, say -- raise NameError once hoisted above them.
+
+    A comment block sitting directly above a merged statement travels with it.
+    The statement's ast span begins at the statement, so merging by span alone
+    would drop the rationale off a hoisted constant and penalize the completion
+    on C for a comment it did write.
+
+    A `from __future__` import goes above the prologue rather than below it,
+    since Python compiles it nowhere else. ast.parse accepts the misplaced
+    version -- it defers that check to compile() -- so nothing downstream
+    would have reported the file it produced.
+
+    A statement whose every line the spliced file's own prologue already has
+    is skipped, so merging into a whole-file completion changes nothing. The
+    comparison is against that prologue rather than every line in the file,
+    which would let a constant coincide with an indented line inside some
+    function body and be dropped as already present.
+
+    A statement that binds exactly the names one of the spliced file's own
+    prologue statements binds replaces it in place. Adding it instead would
+    define the name twice: a completion that retunes `MAX_LINES = 50` to 100
+    would be graded on a file carrying both, so the completion that did the
+    right thing reads as the broken one. The completion's leading comments
+    replace the starter's only when it wrote some, leaving a starter `why`
+    comment standing over a constant whose value alone changed.
+
+    Returns spliced_source unchanged when either side fails to parse or the
+    completion's prologue neither adds nor replaces anything.
+    """
+    try:
+        spliced_tree = ast.parse(spliced_source)
+        completion_tree = ast.parse(completion_code)
+    except SyntaxError:
+        return spliced_source
+
+    spliced_lines = spliced_source.splitlines()
+    completion_lines = completion_code.splitlines()
+    prologue_already_spliced = _prologue_lines(spliced_tree, spliced_lines)
+    spliced_spans_by_name = _prologue_spans_by_bound_names(spliced_tree)
+    spliced_header_end = _line_after_shebang(spliced_lines)
+    completion_header_end = _line_after_shebang(completion_lines)
+
+    future_import_lines: list[str] = []
+    added_lines: list[str] = []
+    replacements: list[tuple[tuple[int, int], list[str]]] = []
+    line_after_last_added = 0
+    for node in completion_tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            break
+        if not isinstance(node, (ast.Import, ast.ImportFrom, ast.Assign, ast.AnnAssign)):
+            continue
+        statement_lines = _lines_in_span(completion_lines, (node.lineno, node.end_lineno))
+        # Judged on the statement's own lines: the spliced file's prologue is
+        # read off its ast too, so a comment above a duplicate import is in
+        # neither set and would make the import look new.
+        if all(
+            line.strip() in prologue_already_spliced
+            for line in statement_lines
+            if line.strip()
+        ):
+            line_after_last_added = node.end_lineno + 1
+            continue
+        first_line = _first_line_of_leading_comments(
+            completion_lines, node.lineno, completion_header_end
+        )
+        with_its_comment = _lines_in_span(completion_lines, (first_line, node.end_lineno))
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__":
+            future_import_lines.extend(with_its_comment)
+            line_after_last_added = node.end_lineno + 1
+            continue
+        replaced_span = spliced_spans_by_name.get(_bound_names(node))
+        if replaced_span is not None:
+            replaced_first_line = replaced_span[0]
+            if first_line < node.lineno:
+                replaced_first_line = _first_line_of_leading_comments(
+                    spliced_lines, replaced_first_line, spliced_header_end
+                )
+            replacements.append(((replaced_first_line, replaced_span[1]), with_its_comment))
+            line_after_last_added = node.end_lineno + 1
+            continue
+        # A blank line the completion left between two of these statements is
+        # the grouping its author chose, and the spans alone would run them
+        # together. M2 grades layout, so the merge must not invent its own.
+        if added_lines and first_line > line_after_last_added:
+            added_lines.append("")
+        added_lines.extend(with_its_comment)
+        line_after_last_added = node.end_lineno + 1
+
+    if not added_lines and not future_import_lines and not replacements:
+        return spliced_source
+
+    # Bottom-up, so a replacement that changes a statement's line count has not
+    # moved the span of the one above it.
+    merged_lines = spliced_lines
+    for (first_line, last_line), block in sorted(replacements, reverse=True):
+        merged_lines = merged_lines[: first_line - 1] + block + merged_lines[last_line:]
+
+    if not added_lines and not future_import_lines:
+        return "\n".join(merged_lines) + "\n"
+
+    # Re-parsed rather than measured off spliced_tree: the replacements above
+    # moved every line below the first of them.
+    try:
+        merged_tree = ast.parse("\n".join(merged_lines))
+    except SyntaxError:
+        return "\n".join(merged_lines) + "\n"
+
+    if added_lines:
+        merged_lines = _inserted_with_blank_lines(
+            merged_lines, _line_after_prologue(merged_tree, merged_lines), added_lines
+        )
+    # Inserted second, and at a line at or above the one the prologue merge
+    # used, so the earlier insertion has not moved the index out from under it.
+    if future_import_lines:
+        merged_lines = _inserted_with_blank_lines(
+            merged_lines,
+            _line_for_future_import(merged_tree, merged_lines),
+            future_import_lines,
+        )
+    return "\n".join(merged_lines) + "\n"
+
+
+def starter_for_output_file(scenario: Scenario) -> str | None:
     """The starter the completion is meant to edit -- the one whose basename
     matches output_file. `next(iter(starter_files))` would compare the model
     output against an unrelated starter on any multi-starter scenario, making
-    the M3 diff-inflation number meaningless."""
+    the M3 diff-inflation number meaningless.
+
+    judge.py imports this alongside reconstruct_edited_file so both scoring
+    tracks splice a fragment onto the same starter."""
     output_name = Path(scenario.output_file).name
     for relative_path, content in scenario.starter_files.items():
         if Path(relative_path).name == output_name:
@@ -640,7 +960,7 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
     }
 
     if scenario.measure_diff_size:
-        starter_before = _starter_for_output_file(scenario)
+        starter_before = starter_for_output_file(scenario)
         if starter_before is None:
             print(
                 f"  WARNING {scenario.id}: measure_diff_size is set but no starter "
