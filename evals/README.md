@@ -98,9 +98,11 @@ for the reasoning and the limitation.
 M1 is `taorc-lint` findings per 100 LOC, skill vs. baseline. `score.py` counts
 only the findings a completion *introduced*: a finding is inherited, and not
 charged, only when the starter line it sits on survived the edit in place — a
-`difflib` `equal` block of two or more lines maps that starter line to the
-completion line the same rule and text fired on (issue #31). A starter function
-the completion deleted takes its findings with it, so a fresh violation the
+`difflib` `equal` block maps that starter line to the completion line the same
+rule and text fired on (issue #31). A lone one-line match counts only when the
+`def`/`class` enclosing it survived too, so rewriting the lines around an
+untouched one still leaves its finding inherited. A starter function the
+completion deleted takes its findings with it, so a fresh violation the
 completion wrote on a coincidentally identical line still counts (issue #34).
 The starter is resolved by `starter_for_output_file`, the same way the M3 diff
 metric picks which file a completion edits, so a scenario with no starter

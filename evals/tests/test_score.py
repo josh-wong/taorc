@@ -457,6 +457,34 @@ class FindingsIntroducedTest(unittest.TestCase):
 
         self.assertEqual(introduced, [])
 
+    def test_finding_on_a_line_kept_between_edited_neighbours_is_excluded(self):
+        """The completion rewrites the lines above and below `tax = base *
+        0.0825` but keeps that line byte-for-byte. difflib aligns it as a lone
+        one-line block; because the enclosing `def` survived, the inherited
+        finding on it is not charged (#31)."""
+        starter_source = (
+            "def monthly_charge(base):\n"
+            "    setup = base * 0.05\n"
+            "    tax = base * 0.0825\n"
+            "    credit = base * 0.10\n"
+            "    return base + tax\n"
+        )
+        completion_source = (
+            "def monthly_charge(base):\n"
+            "    setup = onboarding_fee(base)\n"
+            "    tax = base * 0.0825\n"
+            "    credit = loyalty_credit(base)\n"
+            "    return round(base + tax, 2)\n"
+        )
+        starter = [{"id": "N1", "matched": "tax = base * 0.0825", "line": 3}]
+        completion = [{"id": "N1", "matched": "tax = base * 0.0825", "line": 3}]
+
+        introduced = findings_introduced(
+            completion, starter, starter_source, completion_source
+        )
+
+        self.assertEqual(introduced, [])
+
     def test_same_line_but_a_different_rule_is_counted(self):
         starter = [_finding("N1", "value = payload.get(field)")]
         completion = [_finding("C1", "value = payload.get(field)")]

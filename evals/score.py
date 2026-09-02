@@ -960,27 +960,80 @@ def _finding_signature(finding: dict) -> tuple[str, str]:
     return finding.get("id", ""), (finding.get("matched") or "").strip()
 
 
+def _indent_width(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def _enclosing_definition_index(lines: list[str], index: int) -> int | None:
+    """0-based index of the nearest `def`/`class` line above `index` indented
+    less than it -- the definition the line at `index` sits inside -- or None
+    when no definition encloses it."""
+    ceiling_indent = _indent_width(lines[index])
+    for above in range(index - 1, -1, -1):
+        candidate = lines[above]
+        if not candidate.strip() or _indent_width(candidate) >= ceiling_indent:
+            continue
+        if candidate.lstrip().startswith(("def ", "class ", "async def ")):
+            return above
+        ceiling_indent = _indent_width(candidate)
+    return None
+
+
+def _is_top_level_definition(line: str) -> bool:
+    return _indent_width(line) == 0 and line.lstrip().startswith(
+        ("def ", "class ", "async def ")
+    )
+
+
 def _retained_line_map(starter_source: str, completion_source: str) -> dict[int, int]:
     """Maps a 1-based starter line number to the completion line number holding
     the same content, for every line the edit carried through unchanged and in
-    place. Lines the completion deleted, replaced, or added are absent. Built
-    from difflib's `equal` opcodes, counting only blocks of two or more lines,
-    so a starter line is retained only when it and a neighbour stayed aligned
-    together -- not merely because its text reappears in the completion. A
-    starter function the completion deleted takes its findings with it even
-    when a common line inside it (`data = []`, `return total`) resurfaces in a
-    new function difflib aligns it to (issue #34). A construct the edit truly
-    left alone keeps its whole surrounding block, so the two-line floor does
-    not cost a real inherited finding."""
+    place. Lines the completion deleted, replaced, or added are absent.
+
+    A multi-line `equal` block from difflib is retained wholesale. A lone
+    `equal` line is ambiguous: difflib aligns a stray `data = []` between a
+    starter function the completion deleted and a brand-new one just as
+    readily as it aligns a line an edit stepped around. So a lone line is
+    kept only when the definition around it survived -- a lone top-level
+    `def`/`class` line stands on its own (difflib matched the whole
+    signature), and a lone line deeper in is kept once the `def`/`class`
+    above it is known retained. A completion that rewrites a function's body
+    around one untouched line keeps that line's inherited finding (issue
+    #31); a completion that deletes a function keeps none of it even when a
+    common line resurfaces in a replacement (issue #34)."""
     starter_lines = starter_source.splitlines()
     completion_lines = completion_source.splitlines()
     matcher = difflib.SequenceMatcher(a=starter_lines, b=completion_lines, autojunk=False)
+
     retained: dict[int, int] = {}
+    lone_equal_lines: list[tuple[int, int]] = []
     for tag, starter_start, starter_end, completion_start, _ in matcher.get_opcodes():
-        if tag != "equal" or starter_end - starter_start < 2:
+        if tag != "equal":
             continue
-        for offset in range(starter_end - starter_start):
-            retained[starter_start + offset + 1] = completion_start + offset + 1
+        if starter_end - starter_start >= 2:
+            for offset in range(starter_end - starter_start):
+                retained[starter_start + offset + 1] = completion_start + offset + 1
+        else:
+            lone_equal_lines.append((starter_start, completion_start))
+
+    # A lone line inside a lone `def` line is retained only once that `def`
+    # itself is, which an earlier pass may not have reached -- hence the fixpoint.
+    a_pass_added_a_line = True
+    while a_pass_added_a_line:
+        a_pass_added_a_line = False
+        for starter_index, completion_index in lone_equal_lines:
+            starter_line_number = starter_index + 1
+            if starter_line_number in retained:
+                continue
+            enclosing_index = _enclosing_definition_index(starter_lines, starter_index)
+            inside_a_retained_definition = (
+                enclosing_index is not None and enclosing_index + 1 in retained
+            )
+            if inside_a_retained_definition or _is_top_level_definition(
+                starter_lines[starter_index]
+            ):
+                retained[starter_line_number] = completion_index + 1
+                a_pass_added_a_line = True
     return retained
 
 
