@@ -58,7 +58,11 @@ jobs:
 
       # R7.4: a scoring-logic change must regenerate every published artifact
       # it affects. Re-score each committed run and fail on any drift, so a
-      # future change to score.py cannot silently orphan scores.json.
+      # future change to score.py cannot silently orphan scores.json. A run
+      # scored under an earlier SCORER_VERSION is exempt: score.py returns
+      # without rewriting it (its numbers were published under a different
+      # metric definition), so git diff stays clean for it while every
+      # current-version run is still checked.
       - name: Fail if re-scoring a published run drifts from its committed scores.json
         run: |
           for run in evals/results/*/; do

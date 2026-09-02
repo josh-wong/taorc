@@ -19,7 +19,8 @@ produce.
   writes raw completions.
 - `score.py` — the automated scoring track (`taorc-lint` findings per 100
   LOC, comment ratio and why-comment share, nesting depth, empty-word count,
-  diff size).
+  diff size). M1 counts only the findings a completion *introduced* — see
+  [What M1 counts](#what-m1-counts).
 - `judge.py` — the LLM-judge track (blind pairwise preference, plus a
   per-category N/C/F/S/T rubric aggregated into a skill-vs-baseline delta).
 - `run_smoke_ollama.py` — the unpublished local smoke test for
@@ -91,6 +92,32 @@ for Claude, the `AGENTS.md` managed block for GPT, `system-prompt.md` for
 the open-weights slot — see `evallib/skill_artifacts.py`) change what gets
 written, in the direction the catalog intends. See that module's docstring
 for the reasoning and the limitation.
+
+## What M1 counts
+
+M1 is `taorc-lint` findings per 100 LOC, skill vs. baseline. `score.py` counts
+only the findings a completion *introduced*: a finding whose rule id and source
+line both match one in the scenario's starter is inherited unchanged, sits on a
+line the completion never edited, and is not charged to it (issue #31). The
+starter is resolved by `starter_for_output_file`, the same way the M3 diff
+metric picks which file a completion edits, so a scenario with no starter
+matching `output_file` (01, 04, 05, 06, 08) is unaffected.
+
+Without this, an edit task rewarded breaching `X2`/`X3`: a completion that
+renamed a starter's public symbol cleared the finding and scored better, while
+one that correctly left it alone kept the finding and scored worse. A name the
+completion genuinely introduces still counts, including one in a function it
+rewrote — only a finding matched line-for-line against the starter is excluded.
+`scores.json` carries both `lint_findings` (introduced) and
+`lint_findings_total` so a reader can see what was excluded.
+
+This changed what M1 means, so it is not comparable across the scorer boundary.
+`score.py` carries a `SCORER_VERSION` (2 for this change), written into every
+`scores.json`. A run scored under an earlier version is frozen: `score.py` will
+not overwrite its `scores.json` without `--rescore`, and the CI re-score gate
+skips it. So `results/2026-08-29/` and `results/2026-09-01/` stand as run, and
+the first run scored under version 2 reports both the old and new M1 figure for
+at least one run and records the change in its `RESULTS.md` (design doc §10.5).
 
 ## Trigger suite (M4)
 

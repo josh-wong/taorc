@@ -666,7 +666,7 @@ Scenarios 2 and 3 exist to catch the failure mode, not to show the win. If the s
 
 **Automated** (`score.py`, deterministic, free):
 
-- `taorc-lint` findings per 100 LOC → PRD metric M1
+- `taorc-lint` findings per 100 LOC → PRD metric M1. On an edit task, only the findings a completion *introduced* count — one inherited unchanged from the scenario's starter is not charged to it (issue #31). `score.py`'s `SCORER_VERSION` records which definition a run was scored under.
 - comment-to-code ratio, and share of comments that are *why*-comments
 - mean and max nesting depth (via ruff/eslint)
 - empty-word identifier count
