@@ -4,7 +4,9 @@
 Reads the raw completions written by run_bench.py and computes, per
 scenario/model/condition:
 
-  - taorc-lint findings per 100 LOC                        -> M1
+  - taorc-lint findings the completion introduced, per 100 LOC   -> M1
+    (a finding inherited unchanged from the scenario's starter is
+    not charged to the completion that edited around it -- issue #31)
   - comment-to-code ratio, and the share of those comments that explain why
   - mean and max nesting depth
   - empty-word identifier count (N1's own word list)
@@ -33,12 +35,26 @@ import subprocess
 import sys
 import tempfile
 import tokenize
+from collections import Counter
 from io import StringIO
 from pathlib import Path
 
 EVALS_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = EVALS_ROOT.parent
 LINT_SCRIPT = REPO_ROOT / "skills" / "readable-code" / "scripts" / "taorc_lint.py"
+
+# Bumped whenever a change here alters a published number's meaning, not just
+# its value. scores.json records it, and a run scored under an earlier version
+# is frozen: score.py will not overwrite it without --rescore, and the CI
+# re-score gate skips it, so a metric redefinition never silently rewrites a
+# run already published under the old definition.
+#   1 -> the MS6 scorer (implicit; pre-versioning runs carry no field)
+#   2 -> M1 counts only the findings a completion introduced, not those it
+#        inherited unchanged from the scenario's starter (issues #31, #34): a
+#        finding is inherited only when the starter line it sits on survived
+#        the edit in place, so a fresh violation on a coincidentally identical
+#        line still counts
+SCORER_VERSION = 2
 
 sys.path.insert(0, str(EVALS_ROOT))
 from evallib.scenarios import Scenario, load_all_scenarios  # noqa: E402
@@ -936,6 +952,173 @@ def starter_for_output_file(scenario: Scenario) -> str | None:
     return None
 
 
+def _finding_signature(finding: dict) -> tuple[str, str]:
+    """A finding's rule id paired with the exact source text that tripped it.
+    Two findings share a signature when the same rule fired on the same line,
+    which is how an inherited finding is recognised across an edit that has
+    already shifted every line number."""
+    return finding.get("id", ""), (finding.get("matched") or "").strip()
+
+
+def _indent_width(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def _enclosing_definition_index(lines: list[str], index: int) -> int | None:
+    """0-based index of the nearest `def`/`class` line above `index` indented
+    less than it -- the definition the line at `index` sits inside -- or None
+    when no definition encloses it."""
+    ceiling_indent = _indent_width(lines[index])
+    for above in range(index - 1, -1, -1):
+        candidate = lines[above]
+        if not candidate.strip() or _indent_width(candidate) >= ceiling_indent:
+            continue
+        if candidate.lstrip().startswith(("def ", "class ", "async def ")):
+            return above
+        ceiling_indent = _indent_width(candidate)
+    return None
+
+
+def _is_top_level_definition(line: str) -> bool:
+    return _indent_width(line) == 0 and line.lstrip().startswith(
+        ("def ", "class ", "async def ")
+    )
+
+
+def _retained_line_map(starter_source: str, completion_source: str) -> dict[int, int]:
+    """Maps a 1-based starter line number to the completion line number holding
+    the same content, for every line the edit carried through unchanged and in
+    place. Lines the completion deleted, replaced, or added are absent.
+
+    A multi-line `equal` block from difflib is retained wholesale. A lone
+    `equal` line is ambiguous: difflib aligns a stray `data = []` between a
+    starter function the completion deleted and a brand-new one just as
+    readily as it aligns a line an edit stepped around. So a lone line is
+    kept only when the definition around it survived -- a lone top-level
+    `def`/`class` line stands on its own (difflib matched the whole
+    signature), and a lone line deeper in is kept once the `def`/`class`
+    above it is known retained. A completion that rewrites a function's body
+    around one untouched line keeps that line's inherited finding (issue
+    #31); a completion that deletes a function keeps none of it even when a
+    common line resurfaces in a replacement (issue #34)."""
+    starter_lines = starter_source.splitlines()
+    completion_lines = completion_source.splitlines()
+    matcher = difflib.SequenceMatcher(a=starter_lines, b=completion_lines, autojunk=False)
+
+    retained: dict[int, int] = {}
+    lone_equal_lines: list[tuple[int, int]] = []
+    for tag, starter_start, starter_end, completion_start, _ in matcher.get_opcodes():
+        if tag != "equal":
+            continue
+        if starter_end - starter_start >= 2:
+            for offset in range(starter_end - starter_start):
+                retained[starter_start + offset + 1] = completion_start + offset + 1
+        else:
+            lone_equal_lines.append((starter_start, completion_start))
+
+    # A lone line inside a lone `def` line is retained only once that `def`
+    # itself is, which an earlier pass may not have reached -- hence the fixpoint.
+    a_pass_added_a_line = True
+    while a_pass_added_a_line:
+        a_pass_added_a_line = False
+        for starter_index, completion_index in lone_equal_lines:
+            starter_line_number = starter_index + 1
+            if starter_line_number in retained:
+                continue
+            enclosing_index = _enclosing_definition_index(starter_lines, starter_index)
+            inside_a_retained_definition = (
+                enclosing_index is not None and enclosing_index + 1 in retained
+            )
+            if inside_a_retained_definition or _is_top_level_definition(
+                starter_lines[starter_index]
+            ):
+                retained[starter_line_number] = completion_index + 1
+                a_pass_added_a_line = True
+    return retained
+
+
+def findings_introduced(
+    completion_findings: list[dict],
+    starter_findings: list[dict] | None,
+    starter_source: str | None = None,
+    completion_source: str | None = None,
+) -> list[dict]:
+    """`completion_findings` minus the ones the completion inherited unchanged
+    from the scenario's starter -- a finding on a line the completion never
+    touched sits outside the edit, so M1 must not charge it (issue #31). On an
+    edit task the old behaviour rewarded breaching X2/X3: renaming a starter's
+    public symbol cleared the finding, leaving it alone kept it.
+
+    With both sources given, a starter finding is inherited only when its line
+    survived the edit in place (difflib `equal` block) and the completion has a
+    finding with the same rule id and text on the mapped line. A starter
+    function the completion deleted takes its findings with it, so a fresh
+    violation the completion wrote on a coincidentally identical line still
+    counts (issue #34). Without the sources, falls back to matching by
+    (rule id, text) as a multiset.
+
+    Returns `completion_findings` unchanged when `starter_findings` is None or
+    empty -- a scenario with no starter matching output_file (01, 04, 05, 06,
+    08) is unaffected."""
+    if not starter_findings:
+        return list(completion_findings)
+
+    if starter_source is None or completion_source is None:
+        inherited = Counter(_finding_signature(f) for f in starter_findings)
+        introduced: list[dict] = []
+        for finding in completion_findings:
+            signature = _finding_signature(finding)
+            if inherited[signature] > 0:
+                inherited[signature] -= 1
+                continue
+            introduced.append(finding)
+        return introduced
+
+    retained_line = _retained_line_map(starter_source, completion_source)
+    inherited_on_mapped_line: Counter[tuple[str, str, int]] = Counter()
+    for finding in starter_findings:
+        mapped_line = retained_line.get(finding.get("line"))
+        if mapped_line is None:
+            continue
+        rule_id, matched_text = _finding_signature(finding)
+        inherited_on_mapped_line[(rule_id, matched_text, mapped_line)] += 1
+
+    introduced = []
+    for finding in completion_findings:
+        rule_id, matched_text = _finding_signature(finding)
+        key = (rule_id, matched_text, finding.get("line"))
+        if inherited_on_mapped_line[key] > 0:
+            inherited_on_mapped_line[key] -= 1
+            continue
+        introduced.append(finding)
+    return introduced
+
+
+_starter_findings_by_scenario: dict[str, list[dict] | None] = {}
+
+
+def starter_findings_for(scenario: Scenario) -> list[dict] | None:
+    """taorc-lint's findings on the starter this completion edits, or None when
+    the scenario has no starter matching output_file or the lint subprocess
+    failed on it. Cached per scenario -- every completion in a scenario is
+    measured against the same starter."""
+    if scenario.id in _starter_findings_by_scenario:
+        return _starter_findings_by_scenario[scenario.id]
+    starter_source = starter_for_output_file(scenario)
+    findings = None
+    if starter_source is not None:
+        findings = run_lint(starter_source, Path(scenario.output_file).suffix)
+        if findings is None:
+            print(
+                f"  WARNING {scenario.id}: taorc-lint failed on the starter file -- "
+                "M1 for this scenario will count every finding in each completion, "
+                "including any inherited unchanged from the starter",
+                file=sys.stderr,
+            )
+    _starter_findings_by_scenario[scenario.id] = findings
+    return findings
+
+
 def score_completion(scenario: Scenario, completion_path: Path) -> dict:
     completion_text = completion_path.read_text(encoding="utf-8")
     file_extension = Path(scenario.output_file).suffix
@@ -944,13 +1127,23 @@ def score_completion(scenario: Scenario, completion_path: Path) -> dict:
     findings = run_lint(code, file_extension)
     max_depth, mean_depth = nesting_depth(code)
 
+    introduced = None
+    if findings is not None:
+        introduced = findings_introduced(
+            findings,
+            starter_findings_for(scenario),
+            starter_for_output_file(scenario),
+            code,
+        )
+
     findings_per_100_loc = None
-    if findings is not None and loc:
-        findings_per_100_loc = round(len(findings) * 100 / loc, 2)
+    if introduced is not None and loc:
+        findings_per_100_loc = round(len(introduced) * 100 / loc, 2)
 
     metrics = {
         "loc": loc,
-        "lint_findings": len(findings) if findings is not None else None,
+        "lint_findings": len(introduced) if introduced is not None else None,
+        "lint_findings_total": len(findings) if findings is not None else None,
         "lint_findings_per_100_loc": findings_per_100_loc,
         "comment_to_code_ratio": comment_ratio(code),
         "why_comment_share": why_comment_share(code, findings),
@@ -1055,27 +1248,57 @@ def summarize_guardrail(scores: dict) -> dict:
     }
 
 
+def committed_scorer_version(scores_path: Path) -> int | None:
+    """The SCORER_VERSION a run's existing scores.json was written under, 1 for
+    one that predates the field, or None when there is no scores.json yet."""
+    if not scores_path.is_file():
+        return None
+    try:
+        document = json.loads(scores_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return document.get("scorer_version", 1)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--run", required=True, help="a run directory produced by run_bench.py")
+    parser.add_argument(
+        "--rescore",
+        action="store_true",
+        help="overwrite a scores.json written under an earlier SCORER_VERSION "
+        "(its published numbers were scored under a different metric definition)",
+    )
     args = parser.parse_args()
 
     run_dir = Path(args.run)
     if not (run_dir / "raw").is_dir():
         parser.error(f"{run_dir} has no raw/ directory -- run run_bench.py first")
 
+    scores_path = run_dir / "scores.json"
+    prior_version = committed_scorer_version(scores_path)
+    if prior_version is not None and prior_version < SCORER_VERSION and not args.rescore:
+        print(
+            f"{scores_path} was scored under scorer_version {prior_version}; this "
+            f"scorer is version {SCORER_VERSION}, which redefined a published "
+            "metric (see SCORER_VERSION in score.py). Its numbers stand as run -- "
+            "pass --rescore to overwrite anyway.",
+            file=sys.stderr,
+        )
+        return 0
+
     scores = score_run(run_dir)
     guardrail = summarize_guardrail(scores)
     generation_errors = collect_generation_errors(run_dir)
 
     scores_document = {
+        "scorer_version": SCORER_VERSION,
         "scores": scores,
         "guardrail_diff_inflation_pct": guardrail,
         "generation_errors": generation_errors,
     }
-    scores_path = run_dir / "scores.json"
     scores_path.write_text(json.dumps(scores_document, indent=2), encoding="utf-8")
     print(f"wrote {scores_path}")
     for model_slot, inflation_pct in guardrail.items():

@@ -5,6 +5,11 @@ Covers reconstruct_edited_file, the M3 fix (#23): the diff-size metric must
 measure the edit a completion represents, not whether the model echoed the
 whole starter file or returned only the changed function.
 
+Also covers findings_introduced, the M1 fix (#31, #34): a lint finding a
+completion inherited unchanged from the scenario's starter is not charged to
+the completion, but a fresh one on a line matching a starter finding the
+completion deleted still is.
+
 Uses stdlib unittest to match the rest of this repo's tests (see
 scripts/tests/test_installer.py) -- nothing here depends on a test framework
 beyond the standard library.
@@ -12,14 +17,24 @@ beyond the standard library.
 
 from __future__ import annotations
 
+import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 EVALS_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(EVALS_ROOT))
 
-from score import diff_line_count, extract_code, reconstruct_edited_file  # noqa: E402
+from score import (  # noqa: E402
+    SCORER_VERSION,
+    committed_scorer_version,
+    diff_line_count,
+    extract_code,
+    findings_introduced,
+    reconstruct_edited_file,
+)
 
 CART_STARTER = '''\
 """Shopping cart."""
@@ -343,6 +358,227 @@ def cart_total(cart):
 
         self.assertEqual(rebuilt, rewrite_editing_every_function)
         self.assertNotIn("Shopping cart", rebuilt)
+
+
+def _finding(rule_id: str, matched: str) -> dict:
+    return {"id": rule_id, "matched": matched}
+
+
+class FindingsIntroducedTest(unittest.TestCase):
+    """findings_introduced drops the lint findings a completion carried over
+    unchanged from the scenario's starter, so M1 measures the edit and stops
+    rewarding an X2/X3 breach that renames a starter symbol to clear a finding
+    (#31)."""
+
+    def test_finding_inherited_unchanged_is_excluded(self):
+        starter = [_finding("N1", "def process_data(data):")]
+        completion = [_finding("N1", "def process_data(data):")]
+
+        self.assertEqual(findings_introduced(completion, starter), [])
+
+    def test_finding_on_a_name_the_completion_introduced_is_counted(self):
+        starter = [_finding("N1", "def process_data(data):")]
+        renamed_and_added_a_helper = [
+            _finding("N1", "def process_data(data):"),
+            _finding("N1", "def _tmp(payload):"),
+        ]
+
+        introduced = findings_introduced(renamed_and_added_a_helper, starter)
+
+        self.assertEqual([f["matched"] for f in introduced], ["def _tmp(payload):"])
+
+    def test_finding_reintroduced_into_a_rewritten_starter_function_is_counted(self):
+        """The starter flags `result = {}` once. A completion that rewrites that
+        function and writes `result = {}` again in it has reintroduced the name;
+        multiset matching clears one inherited copy and counts the rest."""
+        starter = [_finding("N1", "result = {}")]
+        rewrote_the_function_and_kept_the_name = [
+            _finding("N1", "result = {}"),
+            _finding("N1", "result = {}"),
+        ]
+
+        introduced = findings_introduced(rewrote_the_function_and_kept_the_name, starter)
+
+        self.assertEqual(introduced, [_finding("N1", "result = {}")])
+
+    def test_new_violation_on_a_line_matching_a_deleted_starter_finding_is_counted(self):
+        """The starter flags `data = []` inside a function the completion
+        deletes outright; the completion writes an unrelated new function that
+        also contains `data = []`. The deleted line is not retained, so the new
+        finding is charged to the completion (#34)."""
+        starter_source = (
+            '"""Old module."""\n\n\n'
+            "def summarise_orders(orders):\n"
+            "    data = []\n"
+            "    for order in orders:\n"
+            "        data.append(order.total)\n"
+            "    return sum(data) / len(data)\n"
+        )
+        completion_source = (
+            '"""Old module."""\n\n\n'
+            "def average_shipping_cost(shipments):\n"
+            "    data = []\n"
+            "    for shipment in shipments:\n"
+            "        data.append(shipment.cost)\n"
+            "    return sum(data) / len(data)\n"
+        )
+        starter = [{"id": "N1", "matched": "data = []", "line": 5}]
+        completion = [{"id": "N1", "matched": "data = []", "line": 5}]
+
+        introduced = findings_introduced(
+            completion, starter, starter_source, completion_source
+        )
+
+        self.assertEqual(introduced, completion)
+
+    def test_finding_on_a_retained_line_is_still_excluded_with_sources(self):
+        """The completion leaves `process_data` untouched and edits a different
+        function, so the inherited N1 on its signature is not charged."""
+        starter_source = (
+            "def process_data(data):\n"
+            "    cleaned = [row for row in data if row]\n"
+            "    return cleaned\n\n\n"
+            "def report(rows):\n"
+            "    print(len(rows))\n"
+        )
+        completion_source = (
+            "def process_data(data):\n"
+            "    cleaned = [row for row in data if row]\n"
+            "    return cleaned\n\n\n"
+            "def report(rows):\n"
+            "    print(f'{len(rows)} rows')\n"
+        )
+        starter = [{"id": "N1", "matched": "def process_data(data):", "line": 1}]
+        completion = [{"id": "N1", "matched": "def process_data(data):", "line": 1}]
+
+        introduced = findings_introduced(
+            completion, starter, starter_source, completion_source
+        )
+
+        self.assertEqual(introduced, [])
+
+    def test_finding_on_a_line_kept_between_edited_neighbours_is_excluded(self):
+        """The completion rewrites the lines above and below `tax = base *
+        0.0825` but keeps that line byte-for-byte. difflib aligns it as a lone
+        one-line block; because the enclosing `def` survived, the inherited
+        finding on it is not charged (#31)."""
+        starter_source = (
+            "def monthly_charge(base):\n"
+            "    setup = base * 0.05\n"
+            "    tax = base * 0.0825\n"
+            "    credit = base * 0.10\n"
+            "    return base + tax\n"
+        )
+        completion_source = (
+            "def monthly_charge(base):\n"
+            "    setup = onboarding_fee(base)\n"
+            "    tax = base * 0.0825\n"
+            "    credit = loyalty_credit(base)\n"
+            "    return round(base + tax, 2)\n"
+        )
+        starter = [{"id": "N1", "matched": "tax = base * 0.0825", "line": 3}]
+        completion = [{"id": "N1", "matched": "tax = base * 0.0825", "line": 3}]
+
+        introduced = findings_introduced(
+            completion, starter, starter_source, completion_source
+        )
+
+        self.assertEqual(introduced, [])
+
+    def test_same_line_but_a_different_rule_is_counted(self):
+        starter = [_finding("N1", "value = payload.get(field)")]
+        completion = [_finding("C1", "value = payload.get(field)")]
+
+        self.assertEqual(findings_introduced(completion, starter), completion)
+
+    def test_no_starter_scenario_keeps_every_finding(self):
+        completion = [
+            _finding("N1", "def handle(data):"),
+            _finding("X7", "# Step 1: parse the request"),
+        ]
+
+        self.assertEqual(findings_introduced(completion, None), completion)
+        self.assertEqual(findings_introduced(completion, []), completion)
+
+    def test_a_returned_list_is_a_copy_not_the_input(self):
+        completion = [_finding("N1", "def handle(data):")]
+
+        self.assertIsNot(findings_introduced(completion, None), completion)
+
+
+class CommittedScorerVersionTest(unittest.TestCase):
+    def test_missing_file_is_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(committed_scorer_version(Path(tmp) / "scores.json"))
+
+    def test_file_without_the_field_reads_as_version_1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "scores.json"
+            path.write_text(json.dumps({"scores": {}}), encoding="utf-8")
+            self.assertEqual(committed_scorer_version(path), 1)
+
+    def test_stamped_file_reads_its_own_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "scores.json"
+            path.write_text(json.dumps({"scorer_version": 2, "scores": {}}), encoding="utf-8")
+            self.assertEqual(committed_scorer_version(path), 2)
+
+
+class ScorerFreezeTest(unittest.TestCase):
+    """score.py stamps scores.json with SCORER_VERSION and refuses to overwrite
+    a run scored under an earlier one without --rescore, so a metric
+    redefinition (issue #31) never silently rewrites a published run."""
+
+    def _run_dir(self, tmp: str) -> Path:
+        run_dir = Path(tmp) / "run"
+        cell = run_dir / "raw" / "10-de-slop" / "claude"
+        cell.mkdir(parents=True)
+        (cell / "baseline.py").write_text(
+            "def process_data(data):\n    return {k: data[k] for k in data}\n",
+            encoding="utf-8",
+        )
+        return run_dir
+
+    def _score(self, run_dir: Path, *extra: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(EVALS_ROOT / "score.py"), "--run", str(run_dir), *extra],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+    def test_a_fresh_run_is_stamped_with_the_current_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = self._run_dir(tmp)
+            self._score(run_dir)
+            document = json.loads((run_dir / "scores.json").read_text(encoding="utf-8"))
+            self.assertEqual(document["scorer_version"], SCORER_VERSION)
+
+    def test_a_run_scored_under_an_earlier_version_is_left_untouched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = self._run_dir(tmp)
+            scores_path = run_dir / "scores.json"
+            frozen = json.dumps({"scorer_version": 1, "scores": {"published": "as run"}})
+            scores_path.write_text(frozen, encoding="utf-8")
+
+            completed = self._score(run_dir)
+
+            self.assertEqual(scores_path.read_text(encoding="utf-8"), frozen)
+            self.assertIn("stand as run", completed.stderr)
+
+    def test_rescore_overwrites_an_earlier_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = self._run_dir(tmp)
+            scores_path = run_dir / "scores.json"
+            scores_path.write_text(
+                json.dumps({"scorer_version": 1, "scores": {}}), encoding="utf-8"
+            )
+
+            self._score(run_dir, "--rescore")
+
+            document = json.loads(scores_path.read_text(encoding="utf-8"))
+            self.assertEqual(document["scorer_version"], SCORER_VERSION)
+            self.assertIn("10-de-slop", document["scores"])
 
 
 class ExtractCodeTest(unittest.TestCase):
