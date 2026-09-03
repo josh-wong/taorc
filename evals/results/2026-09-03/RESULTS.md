@@ -231,8 +231,8 @@ Target: **≥ 70%.**
 | -------- | --------------- | ---- | ---------- |
 | **overall, as run** | **26 / 38** | **68.4% — miss** | 70.0% |
 | **excluding the `02-fix-bug` extraction artifact** | **26 / 36** | **72.2% — pass** | 72.2% |
-| claude-generated pairs (judge: gpt-5.1) | 11 / 20 | 55.0% | 75.0% |
-| gpt-generated pairs (judge: claude-opus-5) | 15 / 18 | 83.3% | 65.0% |
+| claude-generated pairs (judge: gpt-5.1) | 13 / 20 | 65.0% | 75.0% |
+| gpt-generated pairs (judge: claude-opus-5) | 13 / 18 | 72.2% | 65.0% |
 
 `02-fix-bug`/gpt left identical files in both conditions and was correctly
 detected as undecidable, not judged, and not billed — the fix the last run
