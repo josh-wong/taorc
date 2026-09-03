@@ -89,6 +89,15 @@ task asked for** ("Do not add cases to a suite the task did not ask you to
 extend"), deliberately mirroring how the `C14` item was scoped in the MS7 run
 to keep it off M3. That scoping held — see [M3](#m3--diff-size-inflation).
 
+**Edited after this run.** Code review of PR #35 tightened the wording of all
+three files above. The managed-block bullet was rephrased to name test scope
+instead of asserting a coverage obligation under `X1` (whose catalog
+instruction is only about diff width), and the `truncate()` example in
+`references/tests.md` relabelled one case a boundary rather than a distinct
+outcome. Both edits are wording-only and change no rule ID; the run below
+measured the earlier text. The managed block is 459 tokens as shipped, 465 as
+run.
+
 ## The diagnosis did not hold on both slots
 
 The issue recorded both slots regressing on `04-write-tests`. Only one of them
@@ -133,7 +142,7 @@ gap narrowed; it did not close.
 
 On the `gpt` slot the managed-block line **did not land**: coverage is
 unchanged at 4 functions / 8 cases, identical to both prior runs. One line in a
-465-token block is evidently not enough leverage, and that slot had no defect
+block this size is evidently not enough leverage, and that slot had no defect
 to fix in the first place.
 
 ## Automated scoring (M1, M3)
