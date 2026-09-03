@@ -24,6 +24,7 @@ first existing path wins—`.claude/skills/readable-code/SKILL.md`,
 - For a function you add, say what it returns on empty or boundary input and when it raises. (C14)
 - One task per block. If describing it needs "and", split it. (S3)
 - Test names say the scenario and the expected result. (T3)
+- Cover the test scope you were asked for: every distinct outcome for a suite, only the named case for a single test. (X1)
 
 ### Never
 

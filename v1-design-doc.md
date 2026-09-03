@@ -396,6 +396,7 @@ first existing path wins—`.claude/skills/readable-code/SKILL.md`,
 - More than three terms in a condition: name the parts. (E1)
 - One task per function. If describing it needs "and", split it. (S3)
 - Test names say the scenario and the expected result. (T3)
+- Cover the test scope you were asked for: every distinct outcome for a suite, only the named case for a single test. (X1)
 
 ### Never
 - Widen the diff to satisfy a readability rule. Mention it instead. (X1)

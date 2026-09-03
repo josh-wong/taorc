@@ -98,6 +98,42 @@ This is not a rule against multiple assertions. Several assertions about one
 behavior — a parsed record's three fields — are one test. Several assertions
 about three behaviors are three tests.
 
+## Brevity bounds the code, not the coverage
+
+Every rule above is about making a test suite easier to read, and none of them is a reason
+to test less. `T2` picks a simpler input for a case you are already writing; it never
+argues for skipping the case. `T1` and `T5` move code out of a test body or split one
+test into two — both are about what a reader has to hold in mind, not about how much
+the suite pins down.
+
+`X1` is the one most easily misread here, because on a task that asks for a new test
+file there is no existing code to widen. It bounds the code you touch. It does not bound
+how many outcomes you cover, and a list of cases in the task description is where to
+start, not where to stop.
+
+```javascript
+function truncate(text, maxChars, ellipsis = "…") {
+  if (maxChars < 0) throw new RangeError("maxChars must not be negative");
+  if (text.length <= maxChars) return text;
+  return text.slice(0, Math.max(0, maxChars - ellipsis.length)) + ellipsis;
+}
+```
+
+Asked to cover this, "long text gets truncated" is the obvious case, and it is tempting
+to stop there. But that is only the normal path. The `text.length <= maxChars` branch
+returns the input untouched — a second outcome — and its boundary, `text.length` equal
+to `maxChars` exactly, is where an off-by-one between `<` and `<=` would surface, so it
+earns a case of its own. `Math.max(0, ...)` marks a fourth the signature does not
+advertise: when `maxChars` is shorter than the ellipsis, the return value is longer than
+`maxChars`. That is the case a caller will hit and disbelieve, which is exactly why it
+earns a test. The negative-`maxChars` throw is a fifth.
+
+Five tests — four outcomes and the boundary between two of them — each named for what it
+pins down, none longer than the one you would have written anyway.
+
+Where you do decide to stop, say so. Listing the cases you left out is a one-line note
+in your summary, and it hands the author a decision instead of a silent gap.
+
 ## Hard to test is a design signal
 
 `T6` is the rule that points outward. Code needing elaborate setup usually has

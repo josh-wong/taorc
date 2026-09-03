@@ -224,6 +224,12 @@ A test is read most carefully at its least convenient moment.
 | `T5` | Keep each test about one behavior                                               |
 | `T6` | Treat hard-to-test code as a design signal, without distorting design for tests |
 
+None of these rules is about how much a suite covers. `T2` asks for the simplest input
+that exercises a behavior, not for fewer behaviors, and `X1` bounds which code you
+touch, not how many outcomes your tests pin down. When the task is to write tests, the
+distinct outcomes are the task — dropping one to keep the file short is not brevity, it
+is the task left undone.
+
 Guardrails govern how you apply everything above. They outrank the rest when
 they conflict, because a correct rule applied too broadly still costs a
 reviewer time.
@@ -268,7 +274,7 @@ they catch something.
 6. Did you introduce a name used once that says no more than the expression it replaced? Inline it. (`V1`)
 7. Can a nested block become a guard clause, or a long condition a named one? (`F5`, `F6`, `E1`)
 8. Does any function do more than one thing a one-sentence description covers? (`S3`)
-9. Do your test names say the scenario and the expected result? (`T3`)
+9. Do your test names say the scenario and the expected result? If you wrote the suite, does each distinct outcome of the code under test have a case; if you were asked to add one test, did you add only that and note the rest? (`T3`, `X1`)
 10. Did you change anything the task did not require — a signature, a behavior, a file? (`X1`, `X3`, `X4`)
 
 ## Reference map

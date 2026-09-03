@@ -1,0 +1,7 @@
+{
+  "scenario_id": "10-de-slop",
+  "model_slot": "qwen",
+  "condition": "skill",
+  "error": "qwen: set OPENROUTER_API_KEY to call openai-compatible model 'qwen3.6-27b-instruct'",
+  "failed_at": "2026-09-03T12:59:10.675048+00:00"
+}
