@@ -120,15 +120,16 @@ function truncate(text, maxChars, ellipsis = "…") {
 ```
 
 Asked to cover this, "long text gets truncated" is the obvious case, and it is tempting
-to stop there. But that is only the normal path. The `text.length <= maxChars` branch is
-two outcomes of its own — under the limit and exactly at it — and `Math.max(0, ...)`
-marks a fourth the signature does not advertise: when `maxChars` is shorter than the
-ellipsis, the return value is longer than `maxChars`. That is the case a caller will hit
-and disbelieve, which is exactly why it earns a test. The negative-`maxChars` throw is a
-fifth.
+to stop there. But that is only the normal path. The `text.length <= maxChars` branch
+returns the input untouched — a second outcome — and its boundary, `text.length` equal
+to `maxChars` exactly, is where an off-by-one between `<` and `<=` would surface, so it
+earns a case of its own. `Math.max(0, ...)` marks a fourth the signature does not
+advertise: when `maxChars` is shorter than the ellipsis, the return value is longer than
+`maxChars`. That is the case a caller will hit and disbelieve, which is exactly why it
+earns a test. The negative-`maxChars` throw is a fifth.
 
-Five tests, each named for its outcome, none of them longer than the one you would have
-written anyway.
+Five tests — four outcomes and the boundary between two of them — each named for what it
+pins down, none longer than the one you would have written anyway.
 
 Where you do decide to stop, say so. Listing the cases you left out is a one-line note
 in your summary, and it hands the author a decision instead of a silent gap.
