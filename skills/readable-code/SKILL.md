@@ -274,7 +274,7 @@ they catch something.
 6. Did you introduce a name used once that says no more than the expression it replaced? Inline it. (`V1`)
 7. Can a nested block become a guard clause, or a long condition a named one? (`F5`, `F6`, `E1`)
 8. Does any function do more than one thing a one-sentence description covers? (`S3`)
-9. Do your test names say the scenario and the expected result, and does each distinct outcome of the code under test have a case? Do not add cases to a suite the task did not ask you to extend. (`T3`, `X1`)
+9. Do your test names say the scenario and the expected result? If you wrote the suite, does each distinct outcome of the code under test have a case; if you were asked to add one test, did you add only that and note the rest? (`T3`, `X1`)
 10. Did you change anything the task did not require — a signature, a behavior, a file? (`X1`, `X3`, `X4`)
 
 ## Reference map

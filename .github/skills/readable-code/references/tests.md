@@ -100,8 +100,8 @@ about three behaviors are three tests.
 
 ## Brevity bounds the code, not the coverage
 
-Every rule above makes a test file shorter or plainer, and none of them is a reason to
-test less. `T2` picks a simpler input for a case you are already writing; it never
+Every rule above is about making a test suite easier to read, and none of them is a reason
+to test less. `T2` picks a simpler input for a case you are already writing; it never
 argues for skipping the case. `T1` and `T5` move code out of a test body or split one
 test into two — both are about what a reader has to hold in mind, not about how much
 the suite pins down.
