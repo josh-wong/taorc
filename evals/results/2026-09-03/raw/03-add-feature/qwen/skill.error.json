@@ -1,0 +1,7 @@
+{
+  "scenario_id": "03-add-feature",
+  "model_slot": "qwen",
+  "condition": "skill",
+  "error": "qwen: set OPENROUTER_API_KEY to call openai-compatible model 'qwen3.6-27b-instruct'",
+  "failed_at": "2026-09-03T12:52:38.195915+00:00"
+}

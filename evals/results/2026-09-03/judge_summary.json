@@ -1,0 +1,48 @@
+{
+  "preference_counts": {
+    "skill": 26,
+    "baseline": 12,
+    "no_verdict": 0
+  },
+  "rubric_means": {
+    "N": {
+      "category": "naming",
+      "skill_mean": 4.45,
+      "baseline_mean": 4.32,
+      "delta": 0.13,
+      "judgments_scored": 38
+    },
+    "C": {
+      "category": "comments",
+      "skill_mean": 4.05,
+      "baseline_mean": 3.95,
+      "delta": 0.11,
+      "judgments_scored": 38
+    },
+    "F": {
+      "category": "control flow and structure",
+      "skill_mean": 4.39,
+      "baseline_mean": 4.21,
+      "delta": 0.18,
+      "judgments_scored": 38
+    },
+    "S": {
+      "category": "structure and decomposition",
+      "skill_mean": 4.18,
+      "baseline_mean": 4.18,
+      "delta": 0.0,
+      "judgments_scored": 38
+    },
+    "T": {
+      "category": "test quality (if tests are present, otherwise omit)",
+      "skill_mean": 4.25,
+      "baseline_mean": 4.5,
+      "delta": -0.25,
+      "judgments_scored": 4
+    }
+  },
+  "undecidable_pairs": [
+    "02-fix-bug/gpt"
+  ],
+  "excluded_judgment_files": []
+}

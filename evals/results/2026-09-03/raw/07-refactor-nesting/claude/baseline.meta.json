@@ -1,0 +1,14 @@
+{
+  "scenario_id": "07-refactor-nesting",
+  "model_slot": "claude",
+  "model_id": "claude-opus-5",
+  "provider": "anthropic",
+  "condition": "baseline",
+  "skill_artifact": null,
+  "sampler": {
+    "max_tokens": 16000,
+    "temperature": "model default (override rejected by API)",
+    "top_p": "model default (override rejected by API)"
+  },
+  "generated_at": "2026-08-29T09:45:05.788907+00:00"
+}
