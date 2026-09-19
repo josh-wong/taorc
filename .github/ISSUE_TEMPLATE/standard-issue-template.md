@@ -22,3 +22,7 @@ assignees: ''
 ## Technical details
 
 <!-- Add technical details -->
+
+## Model and review effort
+
+<!-- Add the recommended model and review effort, e.g. "Model: Sonnet | Review effort: medium". See AGENTS.md "Model and effort selection" for guidance on choosing between Sonnet/Opus and low/medium/high. -->

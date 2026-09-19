@@ -27,12 +27,13 @@ Issue creation guidelines:
 - If the request maps to a PRD requirement (`v1-product-requirements-doc.md`, e.g. `R6.1`) or a catalog rule ID (e.g. `N7`), reference it explicitly.
 
 - Reference related issues or PRs when relevant
+- Include a "Model and review effort" section stating the recommended model and effort in the format "Model: Sonnet | Review effort: medium" (see AGENTS.md "Model and effort selection" for the Sonnet/Opus and low/medium/high guidance)
 
 Issue quality checklist:
 
 - Title is clear and specific
 - Description follows template structure
-- All required sections completed
+- All required sections completed, including model and review effort
 - Appropriate labels assigned
 - No duplicate issues
 - Linked to related work when applicable

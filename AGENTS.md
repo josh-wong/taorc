@@ -53,16 +53,20 @@ When creating a GitHub issue, provide clear descriptions of bugs or feature requ
 
 For features, describe the user need and reference the relevant PRD requirement ID (e.g. `R6.1`, `R2.3`) or catalog rule ID (e.g. `N7`) when the request maps to one. Propose a solution.
 
+Every issue must include a **Model** and **Review Effort** annotation in the format described in [Model and effort selection](#model-and-effort-selection) below, so anyone picking up the issue knows the recommended reasoning capacity before starting work.
+
 Never omit a section; write "N/A" explicitly when one doesn't apply.
 
 ### Model and effort selection
 
-Before starting work on an issue, check the issue description for **Model** and **Review Effort** annotations. If specified, switch to the recommended model and effort level before asking the AI to begin work. Examples:
+Every issue records a recommended **Model** and **Review Effort** at creation time, using this format:
 
-- "Model: Sonnet | Review Effort: medium" → Switch Claude Code to Sonnet, then start the task
-- "Model: Opus | Review Effort: high" → Switch to Opus for deeper reasoning
+- "Model: Sonnet | Review Effort: medium"
+- "Model: Opus | Review Effort: high"
 
-This ensures the AI has appropriate reasoning capacity and cost efficiency for the task scope.
+Choose **Opus** with **high** effort for work that touches rule ID stability in `catalog/rules.yaml`, the generation policy boundary in `scripts/build.py`, or anything bearing on the "no text from the book" legal constraint — mistakes there are hard to reverse (IDs are permanent once shipped) or carry copyright risk. Choose **Sonnet** with **low** or **medium** effort for well-scoped implementation work, adapter fixtures, and routine testing. Use your judgment for anything in between, and prefer the higher tier when in doubt for catalog or legal-sensitive work.
+
+Before starting work on an issue, check the issue description for these annotations and switch to the recommended model and effort level before asking the AI to begin work. This ensures the AI has appropriate reasoning capacity and cost efficiency for the task scope.
 
 ### Commit practices
 
