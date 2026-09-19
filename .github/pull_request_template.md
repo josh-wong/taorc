@@ -4,7 +4,7 @@
 
 ## Related issues or PRs
 
-<!-- Use format: Resolves issue #123, Relates to PR #456. If a related issue or PR doesn't exist, write "N/A" -->
+<!-- Use a closing keyword so GitHub links the issue under Development and auto-syncs assignee/labels, for example: Resolves #123, Fixes #123, Closes #123. For a non-closing reference, use "Relates to #456". If a related issue or PR doesn't exist, write "N/A" -->
 -
 
 ## Changes made
