@@ -19,6 +19,26 @@ assignees: ''
 
 <!-- Add expected outcome -->
 
+## Steps to reproduce
+
+<!-- For bugs, provide numbered steps that reliably reproduce the problem. Write "N/A" when this section doesn't apply. -->
+
+## Expected behavior
+
+<!-- For bugs, describe what should happen. Write "N/A" when this section doesn't apply. -->
+
+## Actual behavior
+
+<!-- For bugs, describe what happens instead. Write "N/A" when this section doesn't apply. -->
+
+## Environment
+
+<!-- Include relevant versions, platform, operating system, device, configuration, and other environment details. Write "N/A" when this section doesn't apply. -->
+
+## Relevant logs
+
+<!-- Add relevant logs or error output with secrets and private data removed. Write "N/A" when this section doesn't apply. -->
+
 ## Technical details
 
 <!-- Add technical details -->
