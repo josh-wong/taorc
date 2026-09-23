@@ -24,7 +24,7 @@
 
 ## Testing performed
 
-<!-- Mark completed testing with [x]. Add or remove items to match this project's actual testing surface (platforms, locales, accessibility modes, etc.) -->
+<!-- Retain every checklist item. Mark completed items with [x]. Leave incomplete items unchecked. If an item doesn't apply, leave it unchecked and append "not applicable – [brief reason]". -->
 - [ ] Code compiles without errors or warnings
 - [ ] Tested core functionality works as expected
 - [ ] Tested edge cases and error handling
@@ -33,6 +33,13 @@
 - [ ] Token budgets verified for any changed budgeted file (`SKILL.md`, `templates/agent-block.md`, `prompts/system-prompt.md`, `prompts/system-prompt-mini.md`)
 - [ ] Adapter placement matrix passes for affected harnesses (if `catalog/rules.yaml` or `templates/agent-block.md` changed)
 - [ ] Manual harness smoke test performed and recorded in `docs/harness-verification.md` (if skill content or the managed block changed)
+
+## Privacy and security considerations
+
+<!-- Mark applicable items with [x]. Add PR-specific notes below any relevant item. -->
+- [ ] No new data leaves the system without updating any relevant user-facing disclosure
+- [ ] No new network calls, telemetry, analytics SDK, or crash reporter added without review
+- [ ] Error messages and logs don't leak sensitive data
 
 ## Legal and copyright considerations
 
@@ -55,6 +62,8 @@
 
 <!-- Does this PR renumber or remove a rule ID, or change a generated adapter's format? -->
 - [ ] No breaking changes
+- [ ] Schema or data-model version change (describe migration below)
+- [ ] API or wire-format version change (describe backward-compatibility handling below)
 - [ ] Rule catalog change: added, deprecated, or superseded a rule ID (describe below; IDs are never renumbered or reused)
 - [ ] Adapter or manifest format change affecting existing installs (describe migration or backward-compatibility handling below)
 
