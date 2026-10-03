@@ -1,4 +1,4 @@
-<!-- taorc:begin v0.1.0 -->
+<!-- taorc:begin v1.0.0 -->
 ## Readable code (taorc)
 
 Write code so the next reader understands it in the least time. Full rules:

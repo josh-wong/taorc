@@ -147,7 +147,7 @@ Use sentence-style capitalization for all headings and bold-style headings (only
 ### Lists and formatting
 
 Avoid excessive use of bulleted lists and numbered lists. For bulleted items with colons, use `:**` not `**:` (for example, `**Item:**`). Align all rows in Markdown tables for readability in source code.
-<!-- taorc:begin v0.1.0 -->
+<!-- taorc:begin v1.0.0 -->
 ## Readable code (taorc)
 
 Write code so the next reader understands it in the least time. Full rules:

@@ -13,7 +13,7 @@ description: >
   (Boswell & Foucher).
 license: MIT
 metadata:
-  version: "0.1.0"
+  version: "1.0.0"
   source: "The Art of Readable Code, Boswell & Foucher, O'Reilly 2011"
   homepage: "https://github.com/josh-wong/taorc"
 ---
