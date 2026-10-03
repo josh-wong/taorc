@@ -203,57 +203,111 @@ class BashInstallerTest(InstallerCase, unittest.TestCase):
         return bash_proc
 
 
-@unittest.skipUnless(WORKING_BASH, "no working bash interpreter is available")
-class BashDownloadUrlTest(unittest.TestCase):
-    """The archive URL install.sh builds from TAORC_REF.
+ARCHIVE_BASE_URL = "https://github.com/josh-wong/taorc/archive"
 
-    Every other test here installs with --source and never reaches the
-    download, so without this a change to the URL would leave CI green. A
-    stub curl placed first on PATH records the URL it was handed and fails,
-    which stops the installer before it needs a real archive or a network.
+
+class DownloadUrlCase:
+    """The archive URL each installer builds from TAORC_REF.
+
+    Every installer test above passes --source/-Source and never reaches the
+    download, so these are the only tests that would catch a broken URL.
+    Subclasses replace the download command with a stub that records the URL
+    it was handed and then fails, which stops the installer before it needs a
+    real archive or a network.
     """
 
-    def requested_url(self, taorc_ref: str | None) -> str:
-        with tempfile.TemporaryDirectory() as tmp:
-            stub_dir = Path(tmp) / "bin"
-            stub_dir.mkdir()
-            url_log = Path(tmp) / "curl-args.txt"
-            stub_curl = stub_dir / "curl"
-            stub_curl.write_text(
-                f'#!/bin/sh\nprintf \'%s\\n\' "$@" > "{url_log}"\nexit 22\n',
-                encoding="utf-8",
-            )
-            stub_curl.chmod(0o755)
-            project_dir = Path(tmp) / "proj"
-            project_dir.mkdir()
+    def run_with_download_stub(
+        self, tmp_dir: Path, url_log: Path, env: dict[str, str]
+    ) -> subprocess.CompletedProcess:
+        raise NotImplementedError
 
+    def requested_url(self, taorc_ref: str | None) -> str:
+        """The URL the installer tried to download, with TAORC_REF set to
+        taorc_ref, or unset when taorc_ref is None.
+
+        Fails the test, showing the installer's output, when the installer
+        stops without requesting a download.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            url_log = tmp_dir / "requested-url.txt"
             env = {k: v for k, v in os.environ.items() if k != "TAORC_REF"}
-            env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
             if taorc_ref is not None:
                 env["TAORC_REF"] = taorc_ref
-            install_script = REPO_ROOT / "scripts" / "install.sh"
-            subprocess.run(
-                [WORKING_BASH, str(install_script), "--dir", str(project_dir)],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=False,
-            )
-            curl_args = url_log.read_text(encoding="utf-8").splitlines()
-        return next(arg for arg in curl_args if arg.startswith("https://"))
+            installer_proc = self.run_with_download_stub(tmp_dir, url_log, env)
+            if not url_log.exists():
+                self.fail(
+                    f"the installer exited {installer_proc.returncode} without requesting "
+                    f"a download\nstdout: {installer_proc.stdout}\nstderr: {installer_proc.stderr}"
+                )
+            return url_log.read_text(encoding="utf-8").strip()
 
     def test_download_url_accepts_any_git_ref_and_defaults_to_main(self):
-        archive_base = "https://github.com/josh-wong/taorc/archive"
         cases = [
-            (None, f"{archive_base}/main.tar.gz"),
-            ("main", f"{archive_base}/main.tar.gz"),
-            ("fix/installer-tag-ref", f"{archive_base}/fix/installer-tag-ref.tar.gz"),
-            ("v1.0.0", f"{archive_base}/v1.0.0.tar.gz"),
-            ("a0b6aab", f"{archive_base}/a0b6aab.tar.gz"),
+            (None, f"{ARCHIVE_BASE_URL}/main.tar.gz"),
+            ("main", f"{ARCHIVE_BASE_URL}/main.tar.gz"),
+            ("fix/installer-tag-ref", f"{ARCHIVE_BASE_URL}/fix/installer-tag-ref.tar.gz"),
+            ("v1.0.0", f"{ARCHIVE_BASE_URL}/v1.0.0.tar.gz"),
+            ("a0b6aab", f"{ARCHIVE_BASE_URL}/a0b6aab.tar.gz"),
         ]
         for taorc_ref, expected_url in cases:
             with self.subTest(taorc_ref=taorc_ref):
                 self.assertEqual(self.requested_url(taorc_ref), expected_url)
+
+
+@unittest.skipUnless(WORKING_BASH, "no working bash interpreter is available")
+class BashDownloadUrlTest(DownloadUrlCase, unittest.TestCase):
+    # A stub curl placed first on PATH, so the installer finds it instead of
+    # the real one.
+    def run_with_download_stub(self, tmp_dir, url_log, env):
+        stub_dir = tmp_dir / "bin"
+        stub_dir.mkdir()
+        stub_curl = stub_dir / "curl"
+        stub_curl.write_text(
+            "#!/bin/sh\n"
+            'for arg in "$@"; do\n'
+            f'    case "$arg" in https://*) printf \'%s\\n\' "$arg" > "{url_log}" ;; esac\n'
+            "done\n"
+            "exit 22\n",
+            encoding="utf-8",
+        )
+        stub_curl.chmod(0o755)
+        project_dir = tmp_dir / "proj"
+        project_dir.mkdir()
+        env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
+        install_script = REPO_ROOT / "scripts" / "install.sh"
+        return subprocess.run(
+            [WORKING_BASH, str(install_script), "--dir", str(project_dir)],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")
+class PowerShellDownloadUrlTest(DownloadUrlCase, unittest.TestCase):
+    # PowerShell resolves a function before a cmdlet of the same name, so a
+    # function defined in the calling scope shadows Invoke-WebRequest inside
+    # the script it runs. Its throw lands in install.ps1's own download catch.
+    def run_with_download_stub(self, tmp_dir, url_log, env):
+        project_dir = tmp_dir / "proj"
+        project_dir.mkdir()
+        install_script = REPO_ROOT / "scripts" / "install.ps1"
+        command = (
+            "function Invoke-WebRequest {"
+            " param([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing)"
+            f" Set-Content -LiteralPath '{url_log}' -Value $Uri;"
+            " throw 'download stubbed out by test_installer.py' };"
+            f" & '{install_script}' -Dir '{project_dir}'"
+        )
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", command],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")
