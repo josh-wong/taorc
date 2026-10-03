@@ -112,7 +112,7 @@ try {
             Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
         }
         catch {
-            Fail "failed to download $archiveUrl (pass -Source for an offline install)"
+            Fail "failed to download $archiveUrl (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass -Source for an offline install.)"
         }
         tar -xzf $archivePath -C $downloadDir.FullName
         $extracted = Get-ChildItem -Path $downloadDir.FullName -Directory -Filter "taorc-*" | Select-Object -First 1
