@@ -34,7 +34,9 @@
 #
 # Environment:
 #   TAORC_REF         Branch, tag, or commit SHA to download when --source
-#                     is not given, such as v1.0.0. Default: main.
+#                     is not given, such as v1.0.0. Default: main. Fetch
+#                     this script from the same ref you pin, or a newer
+#                     installer runs against older files.
 
 set -euo pipefail
 
@@ -76,7 +78,9 @@ Usage:
 
 Environment:
   TAORC_REF         Branch, tag, or commit SHA to download when --source
-                    is not given, such as v1.0.0. Default: main.
+                    is not given, such as v1.0.0. Default: main. Fetch
+                    this script from the same ref you pin, or a newer
+                    installer runs against older files.
 EOF
 }
 

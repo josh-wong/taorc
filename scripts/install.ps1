@@ -36,7 +36,8 @@
 .NOTES
     Set the TAORC_REF environment variable to a branch, tag, or commit SHA,
     such as v1.0.0, to download that ref instead of main when -Source is not
-    given.
+    given. Fetch this script from the same ref you pin, or a newer installer
+    runs against older files.
 #>
 
 [CmdletBinding()]

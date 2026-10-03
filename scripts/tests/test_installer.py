@@ -18,6 +18,7 @@ that ships in the skill.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -200,6 +201,59 @@ class BashInstallerTest(InstallerCase, unittest.TestCase):
                 f"stdout: {bash_proc.stdout}\nstderr: {bash_proc.stderr}"
             )
         return bash_proc
+
+
+@unittest.skipUnless(WORKING_BASH, "no working bash interpreter is available")
+class BashDownloadUrlTest(unittest.TestCase):
+    """The archive URL install.sh builds from TAORC_REF.
+
+    Every other test here installs with --source and never reaches the
+    download, so without this a change to the URL would leave CI green. A
+    stub curl placed first on PATH records the URL it was handed and fails,
+    which stops the installer before it needs a real archive or a network.
+    """
+
+    def requested_url(self, taorc_ref: str | None) -> str:
+        with tempfile.TemporaryDirectory() as tmp:
+            stub_dir = Path(tmp) / "bin"
+            stub_dir.mkdir()
+            url_log = Path(tmp) / "curl-args.txt"
+            stub_curl = stub_dir / "curl"
+            stub_curl.write_text(
+                f'#!/bin/sh\nprintf \'%s\\n\' "$@" > "{url_log}"\nexit 22\n',
+                encoding="utf-8",
+            )
+            stub_curl.chmod(0o755)
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+
+            env = {k: v for k, v in os.environ.items() if k != "TAORC_REF"}
+            env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
+            if taorc_ref is not None:
+                env["TAORC_REF"] = taorc_ref
+            install_script = REPO_ROOT / "scripts" / "install.sh"
+            subprocess.run(
+                [WORKING_BASH, str(install_script), "--dir", str(project_dir)],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            curl_args = url_log.read_text(encoding="utf-8").splitlines()
+        return next(arg for arg in curl_args if arg.startswith("https://"))
+
+    def test_download_url_accepts_any_git_ref_and_defaults_to_main(self):
+        archive_base = "https://github.com/josh-wong/taorc/archive"
+        cases = [
+            (None, f"{archive_base}/main.tar.gz"),
+            ("main", f"{archive_base}/main.tar.gz"),
+            ("fix/installer-tag-ref", f"{archive_base}/fix/installer-tag-ref.tar.gz"),
+            ("v1.0.0", f"{archive_base}/v1.0.0.tar.gz"),
+            ("a0b6aab", f"{archive_base}/a0b6aab.tar.gz"),
+        ]
+        for taorc_ref, expected_url in cases:
+            with self.subTest(taorc_ref=taorc_ref):
+                self.assertEqual(self.requested_url(taorc_ref), expected_url)
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")
