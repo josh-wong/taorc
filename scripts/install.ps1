@@ -32,6 +32,11 @@
 .PARAMETER Uninstall
     Remove the taorc managed block from every adapter and delete the skill
     directory copies. Leaves any content outside the markers untouched.
+
+.NOTES
+    Set the TAORC_REF environment variable to a branch, tag, or commit SHA,
+    such as v1.0.0, to download that ref instead of main when -Source is not
+    given.
 #>
 
 [CmdletBinding()]
@@ -97,7 +102,9 @@ try {
         }
         $ref = if ($env:TAORC_REF) { $env:TAORC_REF } else { "main" }
         $downloadDir = New-Item -ItemType Directory -Path (Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid()))
-        $archiveUrl = "https://github.com/$RepoSlug/archive/refs/heads/$ref.tar.gz"
+        # The ref-agnostic archive path, not refs/heads/, so a release tag or a
+        # commit SHA resolves as well as a branch.
+        $archiveUrl = "https://github.com/$RepoSlug/archive/$ref.tar.gz"
         $archivePath = Join-Path $downloadDir.FullName "taorc.tar.gz"
         Write-Log "downloading $archiveUrl"
         try {

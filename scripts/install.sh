@@ -33,8 +33,8 @@
 #   --help            Show this message.
 #
 # Environment:
-#   TAORC_REF         Git ref to download when --source is not given.
-#                     Default: main.
+#   TAORC_REF         Branch, tag, or commit SHA to download when --source
+#                     is not given, such as v1.0.0. Default: main.
 
 set -euo pipefail
 
@@ -75,8 +75,8 @@ Usage:
   --help            Show this message.
 
 Environment:
-  TAORC_REF         Git ref to download when --source is not given.
-                    Default: main.
+  TAORC_REF         Branch, tag, or commit SHA to download when --source
+                    is not given, such as v1.0.0. Default: main.
 EOF
 }
 
@@ -183,7 +183,9 @@ if [ -z "$SOURCE_DIR" ]; then
     command -v curl >/dev/null 2>&1 || die "curl is required to download taorc (or pass --source)"
     command -v tar >/dev/null 2>&1 || die "tar is required to unpack taorc (or pass --source)"
     DOWNLOAD_DIR="$(mktemp -d)"
-    ARCHIVE_URL="https://github.com/${REPO_SLUG}/archive/refs/heads/${REF}.tar.gz"
+    # The ref-agnostic archive path, not refs/heads/, so a release tag or a
+    # commit SHA resolves as well as a branch.
+    ARCHIVE_URL="https://github.com/${REPO_SLUG}/archive/${REF}.tar.gz"
     log "downloading ${ARCHIVE_URL}"
     curl -fsSL "$ARCHIVE_URL" -o "$DOWNLOAD_DIR/taorc.tar.gz" \
         || die "failed to download $ARCHIVE_URL (pass --source for an offline install)"
