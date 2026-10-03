@@ -33,8 +33,10 @@
 #   --help            Show this message.
 #
 # Environment:
-#   TAORC_REF         Git ref to download when --source is not given.
-#                     Default: main.
+#   TAORC_REF         Branch, tag, or commit SHA to download when --source
+#                     is not given, such as v1.0.0. Default: main. Fetch
+#                     this script from the same ref you pin, or a newer
+#                     installer runs against older files.
 
 set -euo pipefail
 
@@ -75,8 +77,10 @@ Usage:
   --help            Show this message.
 
 Environment:
-  TAORC_REF         Git ref to download when --source is not given.
-                    Default: main.
+  TAORC_REF         Branch, tag, or commit SHA to download when --source
+                    is not given, such as v1.0.0. Default: main. Fetch
+                    this script from the same ref you pin, or a newer
+                    installer runs against older files.
 EOF
 }
 
@@ -183,10 +187,12 @@ if [ -z "$SOURCE_DIR" ]; then
     command -v curl >/dev/null 2>&1 || die "curl is required to download taorc (or pass --source)"
     command -v tar >/dev/null 2>&1 || die "tar is required to unpack taorc (or pass --source)"
     DOWNLOAD_DIR="$(mktemp -d)"
-    ARCHIVE_URL="https://github.com/${REPO_SLUG}/archive/refs/heads/${REF}.tar.gz"
+    # The ref-agnostic archive path, not refs/heads/, so a release tag or a
+    # commit SHA resolves as well as a branch.
+    ARCHIVE_URL="https://github.com/${REPO_SLUG}/archive/${REF}.tar.gz"
     log "downloading ${ARCHIVE_URL}"
     curl -fsSL "$ARCHIVE_URL" -o "$DOWNLOAD_DIR/taorc.tar.gz" \
-        || die "failed to download $ARCHIVE_URL (pass --source for an offline install)"
+        || die "failed to download $ARCHIVE_URL (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass --source for an offline install.)"
     tar -xzf "$DOWNLOAD_DIR/taorc.tar.gz" -C "$DOWNLOAD_DIR"
     SOURCE_DIR="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type d -name 'taorc-*' | head -n1)"
     [ -n "$SOURCE_DIR" ] || die "could not locate extracted taorc source"

@@ -18,6 +18,7 @@ that ships in the skill.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -200,6 +201,131 @@ class BashInstallerTest(InstallerCase, unittest.TestCase):
                 f"stdout: {bash_proc.stdout}\nstderr: {bash_proc.stderr}"
             )
         return bash_proc
+
+
+ARCHIVE_BASE_URL = "https://github.com/josh-wong/taorc/archive"
+
+
+class DownloadUrlCase:
+    """The archive URL each installer builds from TAORC_REF.
+
+    Every installer test above passes --source/-Source and never reaches the
+    download, so these are the only tests that check the URL an installer
+    asks for. They check that string only. Whether GitHub serves it, and what
+    the archive unpacks to, needs a real download against a real ref.
+
+    Subclasses replace the download command with a stub that records the URL
+    it was handed and then fails, which stops the installer before it needs a
+    real archive or a network.
+    """
+
+    def run_with_download_stub(
+        self, project_dir: Path, url_log: Path, env: dict[str, str]
+    ) -> subprocess.CompletedProcess:
+        """Run the installer against project_dir with its download stubbed.
+
+        The stub must write the requested URL to url_log and then fail, so the
+        installer stops before extraction. env is the environment to run the
+        installer with, TAORC_REF already set or unset; the stub may add to
+        it. Returns the finished installer process, whose exit code is
+        expected to be nonzero.
+        """
+        raise NotImplementedError
+
+    def requested_url(self, taorc_ref: str | None) -> str:
+        """The URL the installer tried to download, with TAORC_REF set to
+        taorc_ref, or unset when taorc_ref is None.
+
+        Fails the test, showing the installer's output, when the installer
+        stops without requesting a download.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+            url_log = Path(tmp) / "requested-url.txt"
+            env = {k: v for k, v in os.environ.items() if k != "TAORC_REF"}
+            if taorc_ref is not None:
+                env["TAORC_REF"] = taorc_ref
+            installer_proc = self.run_with_download_stub(project_dir, url_log, env)
+            if not url_log.exists():
+                self.fail(
+                    f"the installer exited {installer_proc.returncode} without requesting "
+                    f"a download\nstdout: {installer_proc.stdout}\nstderr: {installer_proc.stderr}"
+                )
+            return url_log.read_text(encoding="utf-8").strip()
+
+    def test_download_url_accepts_any_git_ref_and_defaults_to_main(self):
+        cases = [
+            (None, f"{ARCHIVE_BASE_URL}/main.tar.gz"),
+            ("main", f"{ARCHIVE_BASE_URL}/main.tar.gz"),
+            ("feature/example", f"{ARCHIVE_BASE_URL}/feature/example.tar.gz"),
+            ("v1.0.0", f"{ARCHIVE_BASE_URL}/v1.0.0.tar.gz"),
+            ("a0b6aab", f"{ARCHIVE_BASE_URL}/a0b6aab.tar.gz"),
+        ]
+        for taorc_ref, expected_url in cases:
+            with self.subTest(taorc_ref=taorc_ref):
+                self.assertEqual(self.requested_url(taorc_ref), expected_url)
+
+
+# The stubs read their paths from environment variables rather than having
+# them pasted into generated code, so a path containing a quote or a $ can't
+# break the stub.
+
+
+@unittest.skipUnless(WORKING_BASH, "no working bash interpreter is available")
+class BashDownloadUrlTest(DownloadUrlCase, unittest.TestCase):
+    def run_with_download_stub(self, project_dir, url_log, env):
+        """Puts a stub curl first on PATH, so install.sh finds it instead of
+        the real one."""
+        stub_dir = project_dir.parent / "bin"
+        stub_dir.mkdir()
+        stub_curl = stub_dir / "curl"
+        stub_curl.write_text(
+            "#!/bin/sh\n"
+            'for arg in "$@"; do\n'
+            '    case "$arg" in\n'
+            '        https://*) printf \'%s\\n\' "$arg" > "$TAORC_TEST_URL_LOG" ;;\n'
+            "    esac\n"
+            "done\n"
+            "exit 22\n",
+            encoding="utf-8",
+        )
+        stub_curl.chmod(0o755)
+        env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
+        env["TAORC_TEST_URL_LOG"] = str(url_log)
+        install_script = REPO_ROOT / "scripts" / "install.sh"
+        return subprocess.run(
+            [WORKING_BASH, str(install_script), "--dir", str(project_dir)],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")
+class PowerShellDownloadUrlTest(DownloadUrlCase, unittest.TestCase):
+    def run_with_download_stub(self, project_dir, url_log, env):
+        """Shadows Invoke-WebRequest with a function, which PowerShell resolves
+        before a cmdlet of the same name, including inside the script it runs.
+        The function's throw lands in install.ps1's own download catch."""
+        env["TAORC_TEST_URL_LOG"] = str(url_log)
+        env["TAORC_TEST_INSTALL_SCRIPT"] = str(REPO_ROOT / "scripts" / "install.ps1")
+        env["TAORC_TEST_PROJECT_DIR"] = str(project_dir)
+        command = (
+            "function Invoke-WebRequest {"
+            " param([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing)"
+            " Set-Content -LiteralPath $env:TAORC_TEST_URL_LOG -Value $Uri;"
+            " throw 'download stubbed out by test_installer.py' };"
+            " & $env:TAORC_TEST_INSTALL_SCRIPT -Dir $env:TAORC_TEST_PROJECT_DIR"
+        )
+        return subprocess.run(
+            ["pwsh", "-NoProfile", "-Command", command],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")
