@@ -8,6 +8,7 @@ every generated artifact listed in v1-design-doc.md §6.1.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -50,6 +51,14 @@ MANIFEST_TARGETS: list[str] = [
     ".claude-plugin/marketplace.json",
     ".codex-plugin/plugin.json",
     "gemini-extension.json",
+]
+
+# A line in each installer that records the version it was built for, so an
+# installer can refuse a default download of a different version (#42). Each
+# must appear exactly once in its file.
+INSTALLER_VERSION_LINES: list[tuple[str, str]] = [
+    ("scripts/install.sh", 'INSTALLER_VERSION="{version}"'),
+    ("scripts/install.ps1", '$InstallerVersion = "{version}"'),
 ]
 
 # The repo's own dogfooding copy of the skill for harnesses that only look
@@ -97,6 +106,29 @@ def apply_managed_block(path: Path, block: str, frontmatter: str | None = None) 
     path.write_text(updated, encoding="utf-8")
 
 
+def installer_version_pattern(line_template: str) -> re.Pattern[str]:
+    """A pattern matching line_template as a whole line, with the version as
+    group 1. The version may be empty."""
+    escaped = re.escape(line_template).replace(r"\{version\}", r'([^"]*)')
+    return re.compile(rf"^{escaped}$", re.MULTILINE)
+
+
+def write_installer_version(path: Path, line_template: str, version: str) -> None:
+    """Rewrite the version line in the installer at path.
+
+    Raises ValueError, leaving the file unchanged, unless the line appears
+    exactly once.
+    """
+    text = path.read_text(encoding="utf-8")
+    pattern = installer_version_pattern(line_template)
+    updated, line_count = pattern.subn(lambda _: line_template.format(version=version), text)
+    if line_count != 1:
+        raise ValueError(
+            f"{path}: expected exactly one line matching {line_template!r}, found {line_count}"
+        )
+    path.write_text(updated, encoding="utf-8")
+
+
 def sync_github_skills_copy() -> None:
     source_dir = REPO_ROOT / GITHUB_SKILLS_COPY[0]
     dest_dir = REPO_ROOT / GITHUB_SKILLS_COPY[1]
@@ -139,6 +171,14 @@ def main() -> int:
             write_manifest_version(REPO_ROOT / relative_path, version)
         except (json.JSONDecodeError, OSError) as err:
             print(f"error: {relative_path}: {err}", file=sys.stderr)
+            return 1
+        print(f"Synced version in {relative_path}")
+
+    for relative_path, line_template in INSTALLER_VERSION_LINES:
+        try:
+            write_installer_version(REPO_ROOT / relative_path, line_template, version)
+        except (ValueError, OSError) as err:
+            print(f"error: {err}", file=sys.stderr)
             return 1
         print(f"Synced version in {relative_path}")
 

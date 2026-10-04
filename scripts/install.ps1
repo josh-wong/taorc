@@ -36,8 +36,9 @@
 .NOTES
     Set the TAORC_REF environment variable to a branch, tag, or commit SHA,
     such as v1.0.0, to download that ref instead of main when -Source is not
-    given. Fetch this script from the same ref you pin, or a newer installer
-    runs against older files.
+    given. With TAORC_REF unset, the installer stops if main holds a
+    different version from its own. To pin a release, set TAORC_REF to the
+    tag you fetched this script from.
 #>
 
 [CmdletBinding()]
@@ -59,6 +60,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoSlug = "josh-wong/taorc"
+# Written by scripts/build.py from VERSION. Never edit it by hand.
+$InstallerVersion = "1.0.0"
 $AllAgents = @("claude", "copilot", "cursor", "cline", "windsurf", "gemini", "agents")
 
 function Write-Log([string]$Message) {
@@ -147,6 +150,14 @@ try {
     }
 
     $version = (Get-Content (Join-Path $Source "VERSION") -Raw).Trim()
+
+    # Only a default download is held to this installer's version. -Source
+    # and TAORC_REF are the caller's own choice of version, and -Uninstall
+    # removes a block of any version.
+    $isDefaultInstall = $downloadDir -and -not $env:TAORC_REF -and -not $Uninstall
+    if ($isDefaultInstall -and $version -ne $InstallerVersion) {
+        Fail "this installer is v$InstallerVersion, but $ref holds v$version. Set `$env:TAORC_REF = `"v$InstallerVersion`" to install v$InstallerVersion, or fetch the installer from $ref to install v$version."
+    }
     $beginPrefix = "<!-- taorc:begin"
     $endMarker = "<!-- taorc:end -->"
 

@@ -218,15 +218,16 @@ def environ_without_taorc_ref() -> dict[str, str]:
 
 
 def run_install_sh_with_stub_curl(
-    project_dir: Path, stub_body: str, env: dict[str, str]
+    project_dir: Path, stub_body: str, env: dict[str, str], *installer_args: str
 ) -> subprocess.CompletedProcess:
     """Run install.sh against project_dir with a stub curl first on PATH.
 
     stub_body is the stub's shell script after its #! line, and sees curl's
     arguments as "$@". The stub is written to a bin/ directory next to
-    project_dir. Returns the finished installer process without checking its
-    exit code. Raises FileExistsError if that bin/ directory already exists,
-    so call it once per temporary directory.
+    project_dir. installer_args follow --dir on the installer's command line.
+    Returns the finished installer process without checking its exit code.
+    Raises FileExistsError if that bin/ directory already exists, so call it
+    once per temporary directory.
     """
     stub_dir = project_dir.parent / "bin"
     stub_dir.mkdir()
@@ -236,7 +237,7 @@ def run_install_sh_with_stub_curl(
     stub_env = {**env, "PATH": f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"}
     install_script = REPO_ROOT / "scripts" / "install.sh"
     return subprocess.run(
-        [WORKING_BASH, str(install_script), "--dir", str(project_dir)],
+        [WORKING_BASH, str(install_script), "--dir", str(project_dir), *installer_args],
         capture_output=True,
         text=True,
         env=stub_env,
@@ -245,7 +246,7 @@ def run_install_sh_with_stub_curl(
 
 
 def run_install_ps1_with_stub_web_request(
-    project_dir: Path, stub_body: str, env: dict[str, str]
+    project_dir: Path, stub_body: str, env: dict[str, str], *installer_args: str
 ) -> subprocess.CompletedProcess:
     """Run install.ps1 against project_dir with Invoke-WebRequest shadowed.
 
@@ -253,8 +254,10 @@ def run_install_ps1_with_stub_web_request(
     inside the script it runs, so a function defined in the calling scope
     replaces the real download. stub_body is that function's body, and sees
     the installer's arguments as $Uri and $OutFile. A throw from it lands in
-    install.ps1's own download catch. Returns the finished installer process
-    without checking its exit code.
+    install.ps1's own download catch. installer_args follow -Dir on the
+    installer's command line, so they must be literal switches with no
+    quoting. Returns the finished installer process without checking its
+    exit code.
     """
     stub_env = {
         **env,
@@ -265,7 +268,8 @@ def run_install_ps1_with_stub_web_request(
         "function Invoke-WebRequest {"
         " param([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing) "
         + stub_body
-        + " }; & $env:TAORC_TEST_INSTALL_SCRIPT -Dir $env:TAORC_TEST_PROJECT_DIR"
+        + " }; & $env:TAORC_TEST_INSTALL_SCRIPT -Dir $env:TAORC_TEST_PROJECT_DIR "
+        + " ".join(installer_args)
     )
     return subprocess.run(
         ["pwsh", "-NoProfile", "-Command", command],
@@ -370,6 +374,18 @@ class PowerShellDownloadUrlTest(DownloadUrlCase, unittest.TestCase):
         return run_install_ps1_with_stub_web_request(project_dir, stub_body, env)
 
 
+# Download stubs that "succeed" by copying the file at $TAORC_TEST_DOWNLOAD
+# to where the installer expects its archive.
+CURL_STUB_COPYING_TEST_DOWNLOAD = (
+    'while [ "$#" -gt 0 ]; do\n'
+    '    if [ "$1" = "-o" ]; then cp "$TAORC_TEST_DOWNLOAD" "$2"; fi\n'
+    "    shift\n"
+    "done\n"
+)
+WEB_REQUEST_STUB_COPYING_TEST_DOWNLOAD = (
+    "Copy-Item -LiteralPath $env:TAORC_TEST_DOWNLOAD -Destination $OutFile"
+)
+
 NOT_AN_ARCHIVE = b"<html>not an archive</html>"
 
 # Both installers start every fatal message with this.
@@ -463,13 +479,7 @@ class BashExtractionFailureTest(ExtractionFailureCase, unittest.TestCase):
     def run_with_downloaded_file(self, project_dir, env):
         """Runs install.sh with a stub curl that copies $TAORC_TEST_DOWNLOAD
         to the file named by its -o argument and exits 0."""
-        stub_body = (
-            'while [ "$#" -gt 0 ]; do\n'
-            '    if [ "$1" = "-o" ]; then cp "$TAORC_TEST_DOWNLOAD" "$2"; fi\n'
-            "    shift\n"
-            "done\n"
-        )
-        return run_install_sh_with_stub_curl(project_dir, stub_body, env)
+        return run_install_sh_with_stub_curl(project_dir, CURL_STUB_COPYING_TEST_DOWNLOAD, env)
 
 
 @unittest.skipUnless(shutil.which("pwsh") and shutil.which("tar"), "needs pwsh and tar")
@@ -477,8 +487,152 @@ class PowerShellExtractionFailureTest(ExtractionFailureCase, unittest.TestCase):
     def run_with_downloaded_file(self, project_dir, env):
         """Runs install.ps1 with a stub Invoke-WebRequest that copies
         $TAORC_TEST_DOWNLOAD to -OutFile and returns normally."""
-        stub_body = "Copy-Item -LiteralPath $env:TAORC_TEST_DOWNLOAD -Destination $OutFile"
-        return run_install_ps1_with_stub_web_request(project_dir, stub_body, env)
+        return run_install_ps1_with_stub_web_request(
+            project_dir, WEB_REQUEST_STUB_COPYING_TEST_DOWNLOAD, env
+        )
+
+
+# Any version the checkout's own VERSION will never hold.
+OTHER_VERSION = "9.9.9"
+
+
+def gzipped_taorc_archive(version: str) -> bytes:
+    """A .tar.gz laid out like GitHub's archive of this checkout, with its
+    VERSION file set to version. Holds only the files the installers read."""
+
+    def skip_bytecode(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        return None if "__pycache__" in member.name else member
+
+    version_bytes = f"{version}\n".encode()
+    archive_buffer = io.BytesIO()
+    with tarfile.open(fileobj=archive_buffer, mode="w:gz") as archive:
+        for relative_path in ("skills/readable-code", "templates/agent-block.md"):
+            archive.add(
+                REPO_ROOT / relative_path,
+                arcname=f"taorc-main/{relative_path}",
+                filter=skip_bytecode,
+            )
+        version_file = tarfile.TarInfo("taorc-main/VERSION")
+        version_file.size = len(version_bytes)
+        archive.addfile(version_file, io.BytesIO(version_bytes))
+    return archive_buffer.getvalue()
+
+
+class InstallerVersionCheckCase:
+    """With TAORC_REF unset, each installer must stop when the downloaded
+    VERSION differs from its own, so an installer fetched from a release tag
+    never quietly installs whatever main holds (#42).
+
+    Subclasses stub the download the same way ExtractionFailureCase's do,
+    and set AGENTS_MD_UNINSTALL_ARGS to their installer's arguments for
+    uninstalling the AGENTS.md adapter alone.
+    """
+
+    AGENTS_MD_UNINSTALL_ARGS: tuple[str, ...] = ()
+
+    def run_with_downloaded_file(
+        self, project_dir: Path, env: dict[str, str], *installer_args: str
+    ) -> subprocess.CompletedProcess:
+        """Run the installer against project_dir with a download stub that
+        copies $TAORC_TEST_DOWNLOAD into place. installer_args are appended
+        to the installer's command line. Returns the finished installer
+        process without checking its exit code."""
+        raise NotImplementedError
+
+    def install_from_archive(
+        self,
+        project_dir: Path,
+        archive_version: str,
+        *installer_args: str,
+        taorc_ref: str | None = None,
+    ) -> subprocess.CompletedProcess:
+        """Run the installer against project_dir after a download of a taorc
+        archive whose VERSION is archive_version, with TAORC_REF set to
+        taorc_ref, or unset when it is None. Returns the finished installer
+        process without checking its exit code."""
+        download = project_dir.parent / "download.tar.gz"
+        download.write_bytes(gzipped_taorc_archive(archive_version))
+        env = {**environ_without_taorc_ref(), "TAORC_TEST_DOWNLOAD": str(download)}
+        if taorc_ref is not None:
+            env["TAORC_REF"] = taorc_ref
+        return self.run_with_downloaded_file(project_dir, env, *installer_args)
+
+    def test_default_download_of_another_version_stops_before_writing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+            installer_proc = self.install_from_archive(project_dir, OTHER_VERSION)
+            installer_output = installer_proc.stdout + installer_proc.stderr
+            self.assertNotEqual(installer_proc.returncode, 0, installer_output)
+            self.assertIn(INSTALLER_ERROR_PREFIX, installer_output)
+            error = installer_output[installer_output.index(INSTALLER_ERROR_PREFIX) :]
+            # Short fragments only: PowerShell's error view wraps long lines.
+            self.assertIn(f"v{read_version()}", error)
+            self.assertIn(f"v{OTHER_VERSION}", error)
+            self.assertIn("TAORC_REF", error)
+            self.assertEqual(list(project_dir.iterdir()), [], "files were written before the stop")
+
+    def test_default_download_of_own_version_installs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+            installer_proc = self.install_from_archive(project_dir, read_version())
+            self.assertEqual(
+                installer_proc.returncode, 0, installer_proc.stdout + installer_proc.stderr
+            )
+            agents_text = (project_dir / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn(f"<!-- taorc:begin v{read_version()} -->", agents_text)
+
+    def test_explicit_taorc_ref_installs_another_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+            installer_proc = self.install_from_archive(project_dir, OTHER_VERSION, taorc_ref="main")
+            self.assertEqual(
+                installer_proc.returncode, 0, installer_proc.stdout + installer_proc.stderr
+            )
+            agents_text = (project_dir / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertIn(f"<!-- taorc:begin v{OTHER_VERSION} -->", agents_text)
+
+    def test_uninstall_after_default_download_of_another_version_removes_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+            (project_dir / "AGENTS.md").write_text(
+                "# My project\n\n<!-- taorc:begin v0.1.0 -->\nold\n<!-- taorc:end -->\n",
+                encoding="utf-8",
+            )
+            installer_proc = self.install_from_archive(
+                project_dir, OTHER_VERSION, *self.AGENTS_MD_UNINSTALL_ARGS
+            )
+            self.assertEqual(
+                installer_proc.returncode, 0, installer_proc.stdout + installer_proc.stderr
+            )
+            agents_text = (project_dir / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertNotIn("taorc:begin", agents_text)
+            self.assertIn("# My project", agents_text)
+
+
+@unittest.skipUnless(
+    WORKING_BASH and shutil.which("tar"), "needs a working bash interpreter and tar"
+)
+class BashInstallerVersionCheckTest(InstallerVersionCheckCase, unittest.TestCase):
+    AGENTS_MD_UNINSTALL_ARGS = ("--uninstall", "--agents=agents")
+
+    def run_with_downloaded_file(self, project_dir, env, *installer_args):
+        return run_install_sh_with_stub_curl(
+            project_dir, CURL_STUB_COPYING_TEST_DOWNLOAD, env, *installer_args
+        )
+
+
+@unittest.skipUnless(shutil.which("pwsh") and shutil.which("tar"), "needs pwsh and tar")
+class PowerShellInstallerVersionCheckTest(InstallerVersionCheckCase, unittest.TestCase):
+    AGENTS_MD_UNINSTALL_ARGS = ("-Uninstall", "-Agents", "agents")
+
+    def run_with_downloaded_file(self, project_dir, env, *installer_args):
+        return run_install_ps1_with_stub_web_request(
+            project_dir, WEB_REQUEST_STUB_COPYING_TEST_DOWNLOAD, env, *installer_args
+        )
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")

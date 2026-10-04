@@ -34,13 +34,16 @@
 #
 # Environment:
 #   TAORC_REF         Branch, tag, or commit SHA to download when --source
-#                     is not given, such as v1.0.0. Default: main. Fetch
-#                     this script from the same ref you pin, or a newer
-#                     installer runs against older files.
+#                     is not given, such as v1.0.0. Default: main. With
+#                     TAORC_REF unset, the installer stops if main holds a
+#                     different version from its own. To pin a release, set
+#                     TAORC_REF to the tag you fetched this script from.
 
 set -euo pipefail
 
 REPO_SLUG="josh-wong/taorc"
+# Written by scripts/build.py from VERSION. Never edit it by hand.
+INSTALLER_VERSION="1.0.0"
 ALL_AGENTS="claude copilot cursor cline windsurf gemini agents"
 
 usage() {
@@ -78,9 +81,10 @@ Usage:
 
 Environment:
   TAORC_REF         Branch, tag, or commit SHA to download when --source
-                    is not given, such as v1.0.0. Default: main. Fetch
-                    this script from the same ref you pin, or a newer
-                    installer runs against older files.
+                    is not given, such as v1.0.0. Default: main. With
+                    TAORC_REF unset, the installer stops if main holds a
+                    different version from its own. To pin a release, set
+                    TAORC_REF to the tag you fetched this script from.
 EOF
 }
 
@@ -206,6 +210,17 @@ fi
 [ -d "$SOURCE_DIR/skills/readable-code" ] || die "$SOURCE_DIR is missing skills/readable-code"
 
 VERSION="$(tr -d '[:space:]' < "$SOURCE_DIR/VERSION")"
+
+# Only a default download is held to this installer's version. --source and
+# TAORC_REF are the caller's own choice of version, and --uninstall removes a
+# block of any version.
+IS_DEFAULT_INSTALL=0
+if [ -n "$DOWNLOAD_DIR" ] && [ -z "${TAORC_REF:-}" ] && [ "$UNINSTALL" = "0" ]; then
+    IS_DEFAULT_INSTALL=1
+fi
+if [ "$IS_DEFAULT_INSTALL" = "1" ] && [ "$VERSION" != "$INSTALLER_VERSION" ]; then
+    die "this installer is v$INSTALLER_VERSION, but $REF holds v$VERSION. Run it with TAORC_REF=v$INSTALLER_VERSION to install v$INSTALLER_VERSION, or fetch the installer from $REF to install v$VERSION."
+fi
 BEGIN_PREFIX="<!-- taorc:begin"
 END_MARKER="<!-- taorc:end -->"
 

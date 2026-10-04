@@ -44,7 +44,9 @@ from build import (
     AGENT_BLOCK_TOKEN_BUDGET,
     BLOCK_BEGIN,
     GITHUB_SKILLS_COPY,
+    INSTALLER_VERSION_LINES,
     MANIFEST_TARGETS,
+    installer_version_pattern,
     render_managed_block,
 )
 from lib import (
@@ -526,6 +528,19 @@ def check_version_sync(version: str) -> list[str]:
                     f"{relative_path}: managed block marker version {match.group(1)!r} "
                     f"does not match VERSION ({version!r})"
                 )
+
+    for relative_path, line_template in INSTALLER_VERSION_LINES:
+        path = REPO_ROOT / relative_path
+        if not path.exists():
+            errors.append(f"{relative_path}: missing")
+            continue
+        pattern = installer_version_pattern(line_template)
+        embedded_versions = pattern.findall(path.read_text(encoding="utf-8"))
+        if embedded_versions != [version]:
+            errors.append(
+                f"{relative_path}: embedded installer version(s) {embedded_versions!r} "
+                f"do not match VERSION ({version!r}) -- run scripts/build.py"
+            )
 
     return errors
 

@@ -2,7 +2,7 @@
 
 All notable changes to taorc are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [semantic versioning](https://semver.org/).
 
-`VERSION` is the single source for every version field. `scripts/build.py` copies it into the plugin and extension manifests and into each managed block's `<!-- taorc:begin vX.Y.Z -->` marker, and `scripts/validate.py` fails CI if any of them disagree. The skill's own `metadata.version` in `SKILL.md` is hand-written, so it is updated by hand and checked by the same gate.
+`VERSION` is the single source for every version field. `scripts/build.py` copies it into the plugin and extension manifests, into each managed block's `<!-- taorc:begin vX.Y.Z -->` marker, and into each installer's own version line, and `scripts/validate.py` fails CI if any of them disagree. The skill's own `metadata.version` in `SKILL.md` is hand-written, so it is updated by hand and checked by the same gate.
 
 For this project, a rule ID is part of the public interface. Deprecating a rule is a minor change, because the ID stays valid and gains a `superseded_by` pointer. Removing or renumbering an ID would be a major change, and the catalog policy is never to do either.
 
@@ -16,7 +16,7 @@ These changes will ship as 1.0.0, the first public release. The version heading 
 - **Skill:** `skills/readable-code/`, a hand-written `SKILL.md` (4,234 tokens, 323 lines) with `write`, `review`, and `refactor` modes, an operating loop, and a ten-item self-check, plus nine reference files loaded on demand. `references/ai-code-tells.md` maps recognizable habits of LLM-written code to the rule that governs each.
 - **Linter:** `taorc-lint`, a stdlib-only Python script bundled inside the skill, which checks nine high-precision rules (`C1`, `C4`, `N1`, `N3`, `N11`, `S7`, `T3`, `X7`, `X8`) in Python and TypeScript/JavaScript through ast-grep, with inline suppressions and JSON output. Ready-to-merge ruff and ESLint snippets for the structural checks it deliberately leaves out ship under `lint/configs/`.
 - **Adapters:** generated managed blocks for `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, Cursor, GitHub Copilot, Cline, and Windsurf, plus Claude Code plugin, Codex plugin, and Gemini extension manifests, all built from `templates/agent-block.md` and `VERSION` by `scripts/build.py`.
-- **Installers:** `scripts/install.sh` and `scripts/install.ps1`, with `--project`, `--global`, `--agents`, `--detect`, and `--uninstall`. They only ever touch text between taorc's own markers.
+- **Installers:** `scripts/install.sh` and `scripts/install.ps1`, with `--project`, `--global`, `--agents`, `--detect`, and `--uninstall`. They only ever touch text between taorc's own markers, and with `TAORC_REF` unset they refuse to install a version other than their own.
 - **Fallback prompts:** `prompts/system-prompt.md` (506 tokens) and `prompts/system-prompt-mini.md` (144 tokens), for any LLM with no skill runtime.
 - **Claude Code extras:** the `/taorc-review` command (`commands/taorc-review.md`), which reviews the current diff, a path, or a pull request for readability, and the "Readable Code Review" output style (`output-styles/readable-code-review.md`), which formats review findings as rule citations with concrete fixes.
 - **Examples:** `examples/before-after.md`, twenty original before/after pairs in nine languages, four of which show when *not* to apply a rule.

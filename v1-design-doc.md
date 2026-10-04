@@ -361,6 +361,7 @@ Note that three of the most recognizable tells — plan narration, banners, and 
 | `.clinerules/readable-code.md`, `.windsurf/rules/readable-code.md` | block |
 | — | `prompts/*.md` are **not** generated; see below |
 | `.claude-plugin/*`, `.codex-plugin/*`, `gemini-extension.json` | version field sync only |
+| `scripts/install.sh`, `scripts/install.ps1` | the installer's own version line only |
 
 **The prompts are hand-written.** Condensing 85 rules into 800 tokens is an editorial judgment about which rules survive, not a mechanical transform, and §1's policy says prose that must read well is authored. `build.py` does not touch `prompts/`; CI still enforces their token budgets (check 4) and that every ID they cite exists (check 2). Treating them as generated would have meant inventing a selection algorithm nobody could tune.
 
@@ -418,6 +419,8 @@ first existing path wins—`.claude/skills/readable-code/SKILL.md`,
 | Any LLM | Paste `prompts/system-prompt.md` |
 
 `--detect` refreshes only already-installed adapters, comparing the version in each managed block against `VERSION`.
+
+With `TAORC_REF` unset, an installer downloads `main` and stops if `main`'s `VERSION` differs from its own embedded version, naming both and the `TAORC_REF` value to set. An explicit `TAORC_REF`, `--source`, or `--uninstall` skips the check. This keeps generated files identical on every branch: the tagged one-liner doesn't pin by itself, but it can never silently install a different version from the installer's own (#42).
 
 ### 6.4 Claude Code output style (Q6 → v1.0)
 
@@ -632,7 +635,7 @@ taorc_lint.py [paths...]
 3. **Skill spec** – `skills-ref validate ./skills/readable-code` fails, or `name` ≠ directory name.
 4. **Budgets** – `SKILL.md` > 5,000 tokens or > 500 lines (PRD R2.2); `templates/agent-block.md` > 700 tokens (§6.2); `system-prompt.md` > 800; `system-prompt-mini.md` > 150. Tokens measured with a real tokenizer, not word count.
 5. **Adapter drift** – any generated file differs from what `build.py` would produce. (Run `build.py`, `git diff --exit-code`.)
-6. **Version sync** – `VERSION` ≠ any manifest version or any managed-block marker version.
+6. **Version sync** – `VERSION` ≠ any manifest version, any managed-block marker version, or either installer's embedded version.
 7. **Lint fixtures** – positive/negative suites do not produce their asserted finding sets.
 8. **Installer behavior** – fresh install, re-run (idempotent), install into a file with pre-existing user content (block inserted, user content preserved), `--detect` update, `--uninstall` (block removed, user content intact). Run in a temp dir on Linux, macOS, and Windows runners.
 9. **Placement matrix** – for each of the 10 R3.2 targets, install into a temp repo and assert the expected file exists at the documented path with the expected content and version marker. This is what makes the "10 harnesses" claim in M7 checkable; it verifies *placement*, not that the harness reads the file.
