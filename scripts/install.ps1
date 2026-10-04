@@ -57,6 +57,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Native commands report failure through $LASTEXITCODE, which this script
+# checks itself. Pinned off so a session that turned this preference on
+# can't turn tar's failure into a raw exception before that check runs.
+$PSNativeCommandUseErrorActionPreference = $false
 
 $RepoSlug = "josh-wong/taorc"
 $AllAgents = @("claude", "copilot", "cursor", "cline", "windsurf", "gemini", "agents")
@@ -114,13 +118,14 @@ try {
         catch {
             Fail "failed to download $archiveUrl (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass -Source for an offline install.)"
         }
+        # tar's nonzero exit doesn't stop the script, so without this check a
+        # failed extraction would surface one step later as a missing
+        # directory, hiding the real cause. The reset keeps a leftover exit
+        # code from the caller's session out of the check.
+        $global:LASTEXITCODE = 0
         tar -xzf $archivePath -C $downloadDir.FullName
-        # A native command's nonzero exit doesn't trip $ErrorActionPreference
-        # (and $PSNativeCommandUseErrorActionPreference defaults to off), so a
-        # corrupt download would otherwise surface one step later as a missing
-        # directory, hiding the real cause.
         if ($LASTEXITCODE -ne 0) {
-            Fail "failed to extract $archiveUrl (the download may be incomplete or not a taorc archive; pass -Source for an offline install)"
+            Fail "tar exited $LASTEXITCODE while extracting the archive downloaded from $archiveUrl; see tar's error above (pass -Source for an offline install)"
         }
         $extracted = Get-ChildItem -Path $downloadDir.FullName -Directory -Filter "taorc-*" | Select-Object -First 1
         if (-not $extracted) { Fail "could not locate extracted taorc source" }
