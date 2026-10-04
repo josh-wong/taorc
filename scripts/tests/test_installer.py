@@ -399,6 +399,10 @@ class PowerShellDownloadUrlTest(DownloadUrlCase, unittest.TestCase):
         return run_install_ps1_with_stub_web_request(project_dir, stub_body, env)
 
 
+WEB_REQUEST_STUB_COPYING_TEST_DOWNLOAD = (
+    "Copy-Item -LiteralPath $env:TAORC_TEST_DOWNLOAD -Destination $OutFile"
+)
+
 NOT_AN_ARCHIVE = b"<html>not an archive</html>"
 
 # Both installers start every fatal message with this.
@@ -506,8 +510,50 @@ class PowerShellExtractionFailureTest(ExtractionFailureCase, unittest.TestCase):
     def run_with_downloaded_file(self, project_dir, env):
         """Runs install.ps1 with a stub Invoke-WebRequest that copies
         $TAORC_TEST_DOWNLOAD to -OutFile and returns normally."""
-        stub_body = "Copy-Item -LiteralPath $env:TAORC_TEST_DOWNLOAD -Destination $OutFile"
-        return run_install_ps1_with_stub_web_request(project_dir, stub_body, env)
+        return run_install_ps1_with_stub_web_request(
+            project_dir, WEB_REQUEST_STUB_COPYING_TEST_DOWNLOAD, env
+        )
+
+
+@unittest.skipUnless(shutil.which("pwsh") and shutil.which("tar"), "needs pwsh and tar")
+@unittest.skipIf(os.name == "nt", "the stub tar.exe is a shell script")
+class PowerShellSystemTarTest(unittest.TestCase):
+    """install.ps1 must extract with System32\\tar.exe by full path when it
+    exists, so a GNU tar earlier on PATH can't break it (#45).
+
+    Points SystemRoot at a temp directory holding a stub System32/tar.exe that
+    records its arguments and extracts nothing, so the installer then stops
+    with "no taorc source found". The stub's log proves which tar ran.
+    """
+
+    def test_extracts_with_system32_tar_when_it_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+            system_root = Path(tmp) / "windows"
+            (system_root / "System32").mkdir(parents=True)
+            tar_log = Path(tmp) / "tar-args.txt"
+            stub_tar = system_root / "System32" / "tar.exe"
+            stub_tar.write_text(
+                '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$TAORC_TEST_TAR_LOG"\n', encoding="utf-8"
+            )
+            stub_tar.chmod(0o755)
+            download = Path(tmp) / "download.bin"
+            download.write_bytes(gzipped_tar_without_taorc_folder())
+            env = {
+                **environ_without_taorc_ref(),
+                "TAORC_TEST_DOWNLOAD": str(download),
+                "TAORC_TEST_TAR_LOG": str(tar_log),
+                "SystemRoot": str(system_root),
+            }
+            installer_proc = run_install_ps1_with_stub_web_request(
+                project_dir, WEB_REQUEST_STUB_COPYING_TEST_DOWNLOAD, env
+            )
+            self.assertTrue(
+                tar_log.exists(),
+                f"System32 tar.exe was not used\n{installer_proc.stdout}{installer_proc.stderr}",
+            )
+            self.assertIn("-xzf", tar_log.read_text(encoding="utf-8"))
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")

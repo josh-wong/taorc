@@ -73,6 +73,25 @@ function Fail([string]$Message) {
     exit 1
 }
 
+# The path of the tar to extract with, or $null when there is none.
+#
+# Windows ships a bsdtar at System32\tar.exe, but a GNU tar earlier on PATH
+# (Git for Windows' usr\bin, MSYS2, Cygwin) wins a bare "tar". GNU tar reads
+# "C:\...\taorc.tar.gz" as host:path on a remote machine and fails, so prefer
+# the system one by full path (#45). Elsewhere $env:SystemRoot is unset and
+# this falls through to PATH.
+function Get-TarPath {
+    if ($env:SystemRoot) {
+        $systemTar = Join-Path $env:SystemRoot "System32/tar.exe"
+        if (Test-Path -LiteralPath $systemTar -PathType Leaf) { return $systemTar }
+    }
+    # -CommandType Application so an alias or function named tar can't stand
+    # in for it: only a real program sets $LASTEXITCODE.
+    $tarOnPath = Get-Command tar -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($tarOnPath) { return $tarOnPath.Source }
+    return $null
+}
+
 # ---- resolve scope and agent list --------------------------------------
 
 $agentList = ($Agents -split ",") | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
@@ -101,9 +120,8 @@ $workDir = New-Item -ItemType Directory -Path (Join-Path ([System.IO.Path]::GetT
 
 try {
     if (-not $Source) {
-        # -CommandType Application so an alias or function named tar can't
-        # stand in for it: only a real program sets $LASTEXITCODE.
-        if (-not (Get-Command tar -CommandType Application -ErrorAction SilentlyContinue)) {
+        $tarPath = Get-TarPath
+        if (-not $tarPath) {
             Fail "tar is required to unpack taorc (or pass -Source for an offline install)"
         }
         # Defaults to this installer's own release tag, so an installer
@@ -138,7 +156,7 @@ try {
         # $PSNativeCommandUseErrorActionPreference turned on.
         & {
             $ErrorActionPreference = "Continue"
-            tar -xzf $archivePath -C $downloadDir.FullName
+            & $tarPath -xzf $archivePath -C $downloadDir.FullName
         }
         if ($LASTEXITCODE -ne 0) {
             Fail "tar exited $LASTEXITCODE while extracting the archive downloaded from $archiveUrl; see tar's error above (pass -Source for an offline install)"
