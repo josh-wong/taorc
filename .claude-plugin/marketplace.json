@@ -5,7 +5,7 @@
     "url": "https://github.com/josh-wong"
   },
   "description": "Marketplace for taorc, a readable-code skill based on The Art of Readable Code (Boswell & Foucher).",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "plugins": [
     {
       "name": "taorc",

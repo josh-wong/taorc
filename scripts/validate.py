@@ -79,9 +79,22 @@ SKILL_MD_LINE_LIMIT = 500
 # that a harness silently truncates would cost triggers, not just tidiness.
 SKILL_DESCRIPTION_LIMIT = 1024
 
-# Files that legitimately cite rule IDs; everything else under these roots is
+# Directories whose Markdown legitimately cites rule IDs; everything under them is
 # scanned for referential integrity against catalog/rules.yaml.
-CITATION_ROOTS = ["skills/readable-code", "prompts", "templates", "evals"]
+CITATION_ROOTS = [
+    "skills/readable-code",
+    "prompts",
+    "templates",
+    "evals",
+    "examples",
+    "commands",
+    "output-styles",
+]
+
+# Top-level docs that cite rule IDs. Listed one by one rather than scanning the
+# repo root, which would pull in the design docs and AGENTS.md -- prose that
+# discusses ID shapes (`X11`, a placeholder `N`) without citing a real rule.
+CITATION_FILES = ["README.md", "CONTRIBUTING.md", "CHANGELOG.md"]
 
 
 def check_schema(catalog: dict) -> list[str]:
@@ -335,17 +348,18 @@ def check_referential_integrity(catalog: dict) -> list[str]:
     errors = []
     known_ids = {rule["id"] for rule in catalog["rules"]}
 
+    md_files = [REPO_ROOT / name for name in CITATION_FILES]
     for root_name in CITATION_ROOTS:
-        root = REPO_ROOT / root_name
-        if not root.exists():
+        md_files.extend((REPO_ROOT / root_name).rglob("*.md"))
+
+    for md_file in md_files:
+        if not md_file.exists():
             continue
-        for md_file in root.rglob("*.md"):
-            text = md_file.read_text(encoding="utf-8")
-            cited = find_rule_ids(text)
-            unknown = cited - known_ids
-            if unknown:
-                rel = md_file.relative_to(REPO_ROOT)
-                errors.append(f"{rel}: cites unknown rule id(s) {sorted(unknown)}")
+        text = md_file.read_text(encoding="utf-8")
+        unknown = find_rule_ids(text) - known_ids
+        if unknown:
+            rel = md_file.relative_to(REPO_ROOT)
+            errors.append(f"{rel}: cites unknown rule id(s) {sorted(unknown)}")
 
     skill_md = REPO_ROOT / "skills" / "readable-code" / "SKILL.md"
     if skill_md.exists():
