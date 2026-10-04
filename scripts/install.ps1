@@ -57,10 +57,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-# Native commands report failure through $LASTEXITCODE, which this script
-# checks itself. Pinned off so a session that turned this preference on
-# can't turn tar's failure into a raw exception before that check runs.
-$PSNativeCommandUseErrorActionPreference = $false
 
 $RepoSlug = "josh-wong/taorc"
 $AllAgents = @("claude", "copilot", "cursor", "cline", "windsurf", "gemini", "agents")
@@ -102,7 +98,9 @@ $workDir = New-Item -ItemType Directory -Path (Join-Path ([System.IO.Path]::GetT
 
 try {
     if (-not $Source) {
-        if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
+        # -CommandType Application so an alias or function named tar can't
+        # stand in for it: only a real program sets $LASTEXITCODE.
+        if (-not (Get-Command tar -CommandType Application -ErrorAction SilentlyContinue)) {
             Fail "tar is required to unpack taorc (or pass -Source for an offline install)"
         }
         $ref = if ($env:TAORC_REF) { $env:TAORC_REF } else { "main" }
@@ -118,15 +116,13 @@ try {
         catch {
             Fail "failed to download $archiveUrl (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass -Source for an offline install.)"
         }
-        # tar's nonzero exit doesn't stop the script, so without this check a
-        # failed extraction would surface one step later as a missing
-        # directory, hiding the real cause. A real tar always sets
-        # $LASTEXITCODE; the reset covers an alias or function named tar,
-        # which wouldn't, leaving the caller's last exit code in its place.
-        $global:LASTEXITCODE = 0
-        # "Continue" for this one command because Windows PowerShell 5.1 turns
-        # each line tar writes to a redirected stderr into an error record,
-        # which "Stop" would make fatal before the check below could run.
+        # tar's nonzero exit doesn't stop the script, so without the check
+        # below a failed extraction would surface one step later as a missing
+        # directory, hiding the real cause. "Continue" for this one command
+        # keeps that check reachable: under "Stop", Windows PowerShell 5.1
+        # makes each line tar writes to a redirected stderr fatal, and newer
+        # versions do the same with a nonzero exit when the session has
+        # $PSNativeCommandUseErrorActionPreference turned on.
         & {
             $ErrorActionPreference = "Continue"
             tar -xzf $archivePath -C $downloadDir.FullName
