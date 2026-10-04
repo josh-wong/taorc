@@ -329,6 +329,42 @@ class PowerShellDownloadUrlTest(DownloadUrlCase, unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")
+class PowerShellExtractionFailureTest(unittest.TestCase):
+    """install.ps1 must name extraction as the cause when tar fails.
+
+    tar's nonzero exit doesn't stop a PowerShell script on its own, so without
+    an explicit check the installer carries on and fails one step later with
+    a misleading "could not locate extracted taorc source".
+    """
+
+    def test_corrupt_download_fails_with_extraction_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+            env = {k: v for k, v in os.environ.items() if k != "TAORC_REF"}
+            env["TAORC_TEST_INSTALL_SCRIPT"] = str(REPO_ROOT / "scripts" / "install.ps1")
+            env["TAORC_TEST_PROJECT_DIR"] = str(project_dir)
+            # A stub Invoke-WebRequest that "succeeds" with a file that is not
+            # a gzip archive, the way an HTML error page would.
+            command = (
+                "function Invoke-WebRequest {"
+                " param([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing)"
+                " Set-Content -LiteralPath $OutFile -Value '<html>not an archive</html>' };"
+                " & $env:TAORC_TEST_INSTALL_SCRIPT -Dir $env:TAORC_TEST_PROJECT_DIR"
+            )
+            pwsh_proc = subprocess.run(
+                ["pwsh", "-NoProfile", "-Command", command],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+        installer_output = pwsh_proc.stdout + pwsh_proc.stderr
+        self.assertIn("failed to extract", installer_output)
+        self.assertNotIn("could not locate extracted taorc source", installer_output)
+
+
+@unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")
 class PowerShellInstallerTest(InstallerCase, unittest.TestCase):
     def run_install(
         self, project_dir: Path, *agents: str, detect_only: bool = False

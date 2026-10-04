@@ -115,6 +115,13 @@ try {
             Fail "failed to download $archiveUrl (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass -Source for an offline install.)"
         }
         tar -xzf $archivePath -C $downloadDir.FullName
+        # A native command's nonzero exit doesn't trip $ErrorActionPreference
+        # (and $PSNativeCommandUseErrorActionPreference defaults to off), so a
+        # corrupt download would otherwise surface one step later as a missing
+        # directory, hiding the real cause.
+        if ($LASTEXITCODE -ne 0) {
+            Fail "failed to extract $archiveUrl (the download may be incomplete or not a taorc archive; pass -Source for an offline install)"
+        }
         $extracted = Get-ChildItem -Path $downloadDir.FullName -Directory -Filter "taorc-*" | Select-Object -First 1
         if (-not $extracted) { Fail "could not locate extracted taorc source" }
         $Source = $extracted.FullName
