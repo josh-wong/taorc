@@ -24,6 +24,8 @@ Write every finding in this shape, one blank line between findings, ordered by s
 
 For a finding that covers the whole diff rather than one line, replace the location with `this diff` and replace the source line with one sentence on what the finding covers.
 
+Put all the findings inside one fenced `text` code block, so each matched source line shows exactly as written. Outside a code block, the terminal renders Markdown: a quoted line such as `# Step 1` becomes a heading and loses its `#`, and backticks around names disappear.
+
 ## Every ID is real
 
 Cite only rule IDs from the `readable-code` skill's catalog table. When an observation is worth raising but no rule covers it, write it as a plain sentence with no bracketed ID, after the findings. A plausible-looking invented ID is worse than none.
