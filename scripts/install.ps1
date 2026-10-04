@@ -98,7 +98,9 @@ $workDir = New-Item -ItemType Directory -Path (Join-Path ([System.IO.Path]::GetT
 
 try {
     if (-not $Source) {
-        if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
+        # -CommandType Application so an alias or function named tar can't
+        # stand in for it: only a real program sets $LASTEXITCODE.
+        if (-not (Get-Command tar -CommandType Application -ErrorAction SilentlyContinue)) {
             Fail "tar is required to unpack taorc (or pass -Source for an offline install)"
         }
         $ref = if ($env:TAORC_REF) { $env:TAORC_REF } else { "main" }
@@ -114,9 +116,26 @@ try {
         catch {
             Fail "failed to download $archiveUrl (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass -Source for an offline install.)"
         }
-        tar -xzf $archivePath -C $downloadDir.FullName
+        # tar's nonzero exit doesn't stop the script, so without the check
+        # below a failed extraction would surface one step later as a missing
+        # directory, hiding the real cause. "Continue" for this one command
+        # keeps that check reachable: under "Stop", Windows PowerShell 5.1
+        # makes each line tar writes to a redirected stderr fatal, and newer
+        # versions do the same with a nonzero exit when the session has
+        # $PSNativeCommandUseErrorActionPreference turned on.
+        & {
+            $ErrorActionPreference = "Continue"
+            tar -xzf $archivePath -C $downloadDir.FullName
+        }
+        if ($LASTEXITCODE -ne 0) {
+            Fail "tar exited $LASTEXITCODE while extracting the archive downloaded from $archiveUrl; see tar's error above (pass -Source for an offline install)"
+        }
+        # Reachable even when tar succeeds: bsdtar, the tar.exe Windows ships,
+        # exits 0 on an empty download.
         $extracted = Get-ChildItem -Path $downloadDir.FullName -Directory -Filter "taorc-*" | Select-Object -First 1
-        if (-not $extracted) { Fail "could not locate extracted taorc source" }
+        if (-not $extracted) {
+            Fail "no taorc source found in the archive downloaded from $archiveUrl (the download may be empty or not a taorc archive; pass -Source for an offline install)"
+        }
         $Source = $extracted.FullName
     }
 

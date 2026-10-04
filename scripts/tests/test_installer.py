@@ -18,10 +18,12 @@ that ships in the skill.
 
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -203,6 +205,77 @@ class BashInstallerTest(InstallerCase, unittest.TestCase):
         return bash_proc
 
 
+# The download tests below replace the installer's download command with a
+# stub. Stubs read their paths and content from environment variables rather
+# than having them pasted into generated code, so a path containing a quote
+# or a $ can't break the stub.
+
+
+def environ_without_taorc_ref() -> dict[str, str]:
+    """A copy of this process's environment with TAORC_REF removed, so an
+    installer under test downloads its default ref unless a test sets one."""
+    return {k: v for k, v in os.environ.items() if k != "TAORC_REF"}
+
+
+def run_install_sh_with_stub_curl(
+    project_dir: Path, stub_body: str, env: dict[str, str]
+) -> subprocess.CompletedProcess:
+    """Run install.sh against project_dir with a stub curl first on PATH.
+
+    stub_body is the stub's shell script after its #! line, and sees curl's
+    arguments as "$@". The stub is written to a bin/ directory next to
+    project_dir. Returns the finished installer process without checking its
+    exit code. Raises FileExistsError if that bin/ directory already exists,
+    so call it once per temporary directory.
+    """
+    stub_dir = project_dir.parent / "bin"
+    stub_dir.mkdir()
+    stub_curl = stub_dir / "curl"
+    stub_curl.write_text("#!/bin/sh\n" + stub_body, encoding="utf-8")
+    stub_curl.chmod(0o755)
+    stub_env = {**env, "PATH": f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"}
+    install_script = REPO_ROOT / "scripts" / "install.sh"
+    return subprocess.run(
+        [WORKING_BASH, str(install_script), "--dir", str(project_dir)],
+        capture_output=True,
+        text=True,
+        env=stub_env,
+        check=False,
+    )
+
+
+def run_install_ps1_with_stub_web_request(
+    project_dir: Path, stub_body: str, env: dict[str, str]
+) -> subprocess.CompletedProcess:
+    """Run install.ps1 against project_dir with Invoke-WebRequest shadowed.
+
+    PowerShell resolves a function before a cmdlet of the same name, including
+    inside the script it runs, so a function defined in the calling scope
+    replaces the real download. stub_body is that function's body, and sees
+    the installer's arguments as $Uri and $OutFile. A throw from it lands in
+    install.ps1's own download catch. Returns the finished installer process
+    without checking its exit code.
+    """
+    stub_env = {
+        **env,
+        "TAORC_TEST_INSTALL_SCRIPT": str(REPO_ROOT / "scripts" / "install.ps1"),
+        "TAORC_TEST_PROJECT_DIR": str(project_dir),
+    }
+    command = (
+        "function Invoke-WebRequest {"
+        " param([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing) "
+        + stub_body
+        + " }; & $env:TAORC_TEST_INSTALL_SCRIPT -Dir $env:TAORC_TEST_PROJECT_DIR"
+    )
+    return subprocess.run(
+        ["pwsh", "-NoProfile", "-Command", command],
+        capture_output=True,
+        text=True,
+        env=stub_env,
+        check=False,
+    )
+
+
 ARCHIVE_BASE_URL = "https://github.com/josh-wong/taorc/archive"
 
 
@@ -243,7 +316,7 @@ class DownloadUrlCase:
             project_dir = Path(tmp) / "proj"
             project_dir.mkdir()
             url_log = Path(tmp) / "requested-url.txt"
-            env = {k: v for k, v in os.environ.items() if k != "TAORC_REF"}
+            env = environ_without_taorc_ref()
             if taorc_ref is not None:
                 env["TAORC_REF"] = taorc_ref
             installer_proc = self.run_with_download_stub(project_dir, url_log, env)
@@ -267,65 +340,145 @@ class DownloadUrlCase:
                 self.assertEqual(self.requested_url(taorc_ref), expected_url)
 
 
-# The stubs read their paths from environment variables rather than having
-# them pasted into generated code, so a path containing a quote or a $ can't
-# break the stub.
-
-
 @unittest.skipUnless(WORKING_BASH, "no working bash interpreter is available")
 class BashDownloadUrlTest(DownloadUrlCase, unittest.TestCase):
     def run_with_download_stub(self, project_dir, url_log, env):
-        """Puts a stub curl first on PATH, so install.sh finds it instead of
-        the real one."""
-        stub_dir = project_dir.parent / "bin"
-        stub_dir.mkdir()
-        stub_curl = stub_dir / "curl"
-        stub_curl.write_text(
-            "#!/bin/sh\n"
+        """Runs install.sh with a stub curl that records its https://
+        argument to url_log and exits 22."""
+        stub_body = (
             'for arg in "$@"; do\n'
             '    case "$arg" in\n'
             '        https://*) printf \'%s\\n\' "$arg" > "$TAORC_TEST_URL_LOG" ;;\n'
             "    esac\n"
             "done\n"
-            "exit 22\n",
-            encoding="utf-8",
+            "exit 22\n"
         )
-        stub_curl.chmod(0o755)
-        env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
-        env["TAORC_TEST_URL_LOG"] = str(url_log)
-        install_script = REPO_ROOT / "scripts" / "install.sh"
-        return subprocess.run(
-            [WORKING_BASH, str(install_script), "--dir", str(project_dir)],
-            capture_output=True,
-            text=True,
-            env=env,
-            check=False,
-        )
+        env = {**env, "TAORC_TEST_URL_LOG": str(url_log)}
+        return run_install_sh_with_stub_curl(project_dir, stub_body, env)
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")
 class PowerShellDownloadUrlTest(DownloadUrlCase, unittest.TestCase):
     def run_with_download_stub(self, project_dir, url_log, env):
-        """Shadows Invoke-WebRequest with a function, which PowerShell resolves
-        before a cmdlet of the same name, including inside the script it runs.
-        The function's throw lands in install.ps1's own download catch."""
-        env["TAORC_TEST_URL_LOG"] = str(url_log)
-        env["TAORC_TEST_INSTALL_SCRIPT"] = str(REPO_ROOT / "scripts" / "install.ps1")
-        env["TAORC_TEST_PROJECT_DIR"] = str(project_dir)
-        command = (
-            "function Invoke-WebRequest {"
-            " param([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing)"
-            " Set-Content -LiteralPath $env:TAORC_TEST_URL_LOG -Value $Uri;"
-            " throw 'download stubbed out by test_installer.py' };"
-            " & $env:TAORC_TEST_INSTALL_SCRIPT -Dir $env:TAORC_TEST_PROJECT_DIR"
+        """Runs install.ps1 with a stub Invoke-WebRequest that records -Uri
+        to url_log and throws."""
+        stub_body = (
+            "Set-Content -LiteralPath $env:TAORC_TEST_URL_LOG -Value $Uri;"
+            " throw 'download stubbed out by test_installer.py'"
         )
-        return subprocess.run(
-            ["pwsh", "-NoProfile", "-Command", command],
-            capture_output=True,
-            text=True,
-            env=env,
-            check=False,
+        env = {**env, "TAORC_TEST_URL_LOG": str(url_log)}
+        return run_install_ps1_with_stub_web_request(project_dir, stub_body, env)
+
+
+NOT_AN_ARCHIVE = b"<html>not an archive</html>"
+
+# Both installers start every fatal message with this.
+INSTALLER_ERROR_PREFIX = "taorc-install: error:"
+
+# A fragment of the default download URL short enough that PowerShell's error
+# view, which wraps at word boundaries, keeps it on one line.
+DEFAULT_ARCHIVE_URL_FRAGMENT = "archive/main.tar.gz"
+
+
+def gzipped_tar_without_taorc_folder() -> bytes:
+    """A valid .tar.gz whose only top-level folder is not named taorc-*, so
+    tar extracts it successfully on every platform."""
+    archive_buffer = io.BytesIO()
+    with tarfile.open(fileobj=archive_buffer, mode="w:gz") as archive:
+        readme = tarfile.TarInfo("other-project-1.0/README")
+        readme.size = 0
+        archive.addfile(readme, io.BytesIO(b""))
+    return archive_buffer.getvalue()
+
+
+class ExtractionFailureCase:
+    """Each installer must stop with an error that names the download when
+    the downloaded file isn't a usable taorc archive.
+
+    Subclasses replace the download with a stub that "succeeds" by copying
+    the file at $TAORC_TEST_DOWNLOAD into place. Before #41, install.ps1
+    carried on past tar's failure and stopped one step later with a
+    misleading "could not locate extracted taorc source".
+
+    Message assertions match only the start of each message or a short URL
+    fragment, because PowerShell's error view wraps long lines.
+    """
+
+    def run_with_downloaded_file(
+        self, project_dir: Path, env: dict[str, str]
+    ) -> subprocess.CompletedProcess:
+        """Run the installer against project_dir with a download stub that
+        copies $TAORC_TEST_DOWNLOAD to where the archive should go and
+        reports success. env is the environment to run with, TAORC_REF unset
+        and TAORC_TEST_DOWNLOAD set. Returns the finished installer process
+        without checking its exit code."""
+        raise NotImplementedError
+
+    def run_installer_on(self, downloaded_bytes: bytes) -> tuple[int, str]:
+        """The installer's exit code and combined output after a download
+        that delivered downloaded_bytes, which may be empty."""
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+            download = Path(tmp) / "download.bin"
+            download.write_bytes(downloaded_bytes)
+            env = {**environ_without_taorc_ref(), "TAORC_TEST_DOWNLOAD": str(download)}
+            installer_proc = self.run_with_downloaded_file(project_dir, env)
+        return installer_proc.returncode, installer_proc.stdout + installer_proc.stderr
+
+    def installer_error(self, exit_code: int, installer_output: str) -> str:
+        """The installer's error message and everything after it. Fails the
+        test if the installer exited 0 or printed no error.
+
+        Matching from the error prefix matters: the installer logs the URL it
+        is downloading before any error, so a URL found anywhere in the output
+        would prove nothing about the error itself.
+        """
+        self.assertNotEqual(exit_code, 0, installer_output)
+        self.assertIn(INSTALLER_ERROR_PREFIX, installer_output)
+        return installer_output[installer_output.index(INSTALLER_ERROR_PREFIX) :]
+
+    def test_corrupt_download_stops_with_tar_error_naming_the_download(self):
+        error = self.installer_error(*self.run_installer_on(NOT_AN_ARCHIVE))
+        self.assertIn("tar exited", error)
+        self.assertIn(DEFAULT_ARCHIVE_URL_FRAGMENT, error)
+
+    def test_archive_without_taorc_folder_stops_with_error_naming_the_download(self):
+        error = self.installer_error(*self.run_installer_on(gzipped_tar_without_taorc_folder()))
+        self.assertIn("no taorc source found", error)
+        self.assertIn(DEFAULT_ARCHIVE_URL_FRAGMENT, error)
+
+    def test_empty_download_stops_with_error_naming_the_download(self):
+        error = self.installer_error(*self.run_installer_on(b""))
+        # GNU tar fails on an empty file and bsdtar (macOS, Windows) exits 0,
+        # so the installer legitimately stops at either message.
+        self.assertTrue("tar exited" in error or "no taorc source found" in error, error)
+        self.assertIn(DEFAULT_ARCHIVE_URL_FRAGMENT, error)
+
+
+@unittest.skipUnless(
+    WORKING_BASH and shutil.which("tar"), "needs a working bash interpreter and tar"
+)
+class BashExtractionFailureTest(ExtractionFailureCase, unittest.TestCase):
+    def run_with_downloaded_file(self, project_dir, env):
+        """Runs install.sh with a stub curl that copies $TAORC_TEST_DOWNLOAD
+        to the file named by its -o argument and exits 0."""
+        stub_body = (
+            'while [ "$#" -gt 0 ]; do\n'
+            '    if [ "$1" = "-o" ]; then cp "$TAORC_TEST_DOWNLOAD" "$2"; fi\n'
+            "    shift\n"
+            "done\n"
         )
+        return run_install_sh_with_stub_curl(project_dir, stub_body, env)
+
+
+@unittest.skipUnless(shutil.which("pwsh") and shutil.which("tar"), "needs pwsh and tar")
+class PowerShellExtractionFailureTest(ExtractionFailureCase, unittest.TestCase):
+    def run_with_downloaded_file(self, project_dir, env):
+        """Runs install.ps1 with a stub Invoke-WebRequest that copies
+        $TAORC_TEST_DOWNLOAD to -OutFile and returns normally."""
+        stub_body = "Copy-Item -LiteralPath $env:TAORC_TEST_DOWNLOAD -Destination $OutFile"
+        return run_install_ps1_with_stub_web_request(project_dir, stub_body, env)
 
 
 @unittest.skipUnless(shutil.which("pwsh"), "pwsh is not on PATH")
