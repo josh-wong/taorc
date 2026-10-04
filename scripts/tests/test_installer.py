@@ -170,6 +170,22 @@ class InstallerCase:
                 "skill copy should be removed on uninstall",
             )
 
+    def test_uninstall_with_default_agents_skips_adapters_that_are_not_installed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+            (project_dir / "AGENTS.md").write_text(
+                "# My project\n\nSome existing instructions.\n", encoding="utf-8"
+            )
+            self.run_install(project_dir, "agents")
+            # No agents argument, so the default list runs against a project
+            # where most of its adapters were never installed (#46).
+            self.run_uninstall(project_dir)
+
+            agents_text = (project_dir / "AGENTS.md").read_text(encoding="utf-8")
+            self.assertNotIn("taorc:begin", agents_text)
+            self.assertIn("Some existing instructions.", agents_text)
+
 
 @unittest.skipUnless(WORKING_BASH, "no working bash interpreter is available")
 class BashInstallerTest(InstallerCase, unittest.TestCase):
