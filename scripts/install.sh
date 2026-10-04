@@ -34,10 +34,10 @@
 #
 # Environment:
 #   TAORC_REF         Branch, tag, or commit SHA to download when --source
-#                     is not given, such as v1.0.0. Default: main. With
-#                     TAORC_REF unset, the installer stops if main holds a
-#                     different version from its own. To pin a release, set
-#                     TAORC_REF to the tag you fetched this script from.
+#                     is not given, such as main for unreleased changes.
+#                     Default: the release tag this script shipped with,
+#                     so a script fetched from main installs the latest
+#                     release and one fetched from a tag installs that tag.
 
 set -euo pipefail
 
@@ -81,10 +81,10 @@ Usage:
 
 Environment:
   TAORC_REF         Branch, tag, or commit SHA to download when --source
-                    is not given, such as v1.0.0. Default: main. With
-                    TAORC_REF unset, the installer stops if main holds a
-                    different version from its own. To pin a release, set
-                    TAORC_REF to the tag you fetched this script from.
+                    is not given, such as main for unreleased changes.
+                    Default: the release tag this script shipped with,
+                    so a script fetched from main installs the latest
+                    release and one fetched from a tag installs that tag.
 EOF
 }
 
@@ -187,7 +187,15 @@ cleanup() {
 trap cleanup EXIT
 
 if [ -z "$SOURCE_DIR" ]; then
-    REF="${TAORC_REF:-main}"
+    # Defaults to this installer's own release tag, so an installer fetched
+    # from a tag installs that release and one fetched from main installs the
+    # latest release, never unreleased work (#42).
+    REF="${TAORC_REF:-v$INSTALLER_VERSION}"
+    if [ -n "${TAORC_REF:-}" ]; then
+        DOWNLOAD_HINT="check that TAORC_REF names an existing branch, tag, or commit; release tags start with v"
+    else
+        DOWNLOAD_HINT="the v$INSTALLER_VERSION tag may not be published yet; set TAORC_REF=main to install main instead"
+    fi
     command -v curl >/dev/null 2>&1 || die "curl is required to download taorc (or pass --source)"
     command -v tar >/dev/null 2>&1 || die "tar is required to unpack taorc (or pass --source)"
     DOWNLOAD_DIR="$(mktemp -d)"
@@ -196,7 +204,7 @@ if [ -z "$SOURCE_DIR" ]; then
     ARCHIVE_URL="https://github.com/${REPO_SLUG}/archive/${REF}.tar.gz"
     log "downloading ${ARCHIVE_URL}"
     curl -fsSL "$ARCHIVE_URL" -o "$DOWNLOAD_DIR/taorc.tar.gz" \
-        || die "failed to download $ARCHIVE_URL (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass --source for an offline install.)"
+        || die "failed to download $ARCHIVE_URL ($DOWNLOAD_HINT. Or pass --source for an offline install.)"
     tar -xzf "$DOWNLOAD_DIR/taorc.tar.gz" -C "$DOWNLOAD_DIR" \
         || die "tar exited $? while extracting the archive downloaded from $ARCHIVE_URL; see tar's error above (pass --source for an offline install)"
     SOURCE_DIR="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type d -name 'taorc-*' | head -n1)"
@@ -210,17 +218,6 @@ fi
 [ -d "$SOURCE_DIR/skills/readable-code" ] || die "$SOURCE_DIR is missing skills/readable-code"
 
 VERSION="$(tr -d '[:space:]' < "$SOURCE_DIR/VERSION")"
-
-# Only a default download is held to this installer's version. --source and
-# TAORC_REF are the caller's own choice of version, and --uninstall removes a
-# block of any version.
-IS_DEFAULT_INSTALL=0
-if [ -n "$DOWNLOAD_DIR" ] && [ -z "${TAORC_REF:-}" ] && [ "$UNINSTALL" = "0" ]; then
-    IS_DEFAULT_INSTALL=1
-fi
-if [ "$IS_DEFAULT_INSTALL" = "1" ] && [ "$VERSION" != "$INSTALLER_VERSION" ]; then
-    die "this installer is v$INSTALLER_VERSION, but $REF holds v$VERSION. Run it with TAORC_REF=v$INSTALLER_VERSION to install v$INSTALLER_VERSION, or fetch the installer from $REF to install v$VERSION."
-fi
 BEGIN_PREFIX="<!-- taorc:begin"
 END_MARKER="<!-- taorc:end -->"
 

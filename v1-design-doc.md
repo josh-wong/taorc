@@ -420,7 +420,7 @@ first existing path wins—`.claude/skills/readable-code/SKILL.md`,
 
 `--detect` refreshes only already-installed adapters, comparing the version in each managed block against `VERSION`.
 
-With `TAORC_REF` unset, an installer downloads `main` and stops if `main`'s `VERSION` differs from its own embedded version, naming both and the `TAORC_REF` value to set. An explicit `TAORC_REF`, `--source`, or `--uninstall` skips the check. This keeps generated files identical on every branch: the tagged one-liner doesn't pin by itself, but it can never silently install a different version from the installer's own (#42).
+With `TAORC_REF` unset, an installer downloads the release tag matching its own embedded version, `v<VERSION>`. `VERSION` changes only in a release commit, so the installer on `main` installs the latest release, and one fetched from a tag installs that tag, with generated files identical on every branch (#42). `TAORC_REF` overrides the default with any branch, tag, or commit, such as `main` for unreleased changes. Between merging a release commit and pushing its tag, the default download fails, and the error names `TAORC_REF=main` as the way around it.
 
 ### 6.4 Claude Code output style (Q6 → v1.0)
 

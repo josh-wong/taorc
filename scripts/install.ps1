@@ -35,10 +35,10 @@
 
 .NOTES
     Set the TAORC_REF environment variable to a branch, tag, or commit SHA,
-    such as v1.0.0, to download that ref instead of main when -Source is not
-    given. With TAORC_REF unset, the installer stops if main holds a
-    different version from its own. To pin a release, set TAORC_REF to the
-    tag you fetched this script from.
+    such as main for unreleased changes, to download that ref when -Source
+    is not given. By default the installer downloads the release tag it
+    shipped with, so a script fetched from main installs the latest release
+    and one fetched from a tag installs that tag.
 #>
 
 [CmdletBinding()]
@@ -106,7 +106,17 @@ try {
         if (-not (Get-Command tar -CommandType Application -ErrorAction SilentlyContinue)) {
             Fail "tar is required to unpack taorc (or pass -Source for an offline install)"
         }
-        $ref = if ($env:TAORC_REF) { $env:TAORC_REF } else { "main" }
+        # Defaults to this installer's own release tag, so an installer
+        # fetched from a tag installs that release and one fetched from main
+        # installs the latest release, never unreleased work (#42).
+        if ($env:TAORC_REF) {
+            $ref = $env:TAORC_REF
+            $downloadHint = "check that TAORC_REF names an existing branch, tag, or commit; release tags start with v"
+        }
+        else {
+            $ref = "v$InstallerVersion"
+            $downloadHint = "the v$InstallerVersion tag may not be published yet; set `$env:TAORC_REF = `"main`" to install main instead"
+        }
         $downloadDir = New-Item -ItemType Directory -Path (Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid()))
         # The ref-agnostic archive path, not refs/heads/, so a release tag or a
         # commit SHA resolves as well as a branch.
@@ -117,7 +127,7 @@ try {
             Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
         }
         catch {
-            Fail "failed to download $archiveUrl (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass -Source for an offline install.)"
+            Fail "failed to download $archiveUrl ($downloadHint. Or pass -Source for an offline install.)"
         }
         # tar's nonzero exit doesn't stop the script, so without the check
         # below a failed extraction would surface one step later as a missing
@@ -150,14 +160,6 @@ try {
     }
 
     $version = (Get-Content (Join-Path $Source "VERSION") -Raw).Trim()
-
-    # Only a default download is held to this installer's version. -Source
-    # and TAORC_REF are the caller's own choice of version, and -Uninstall
-    # removes a block of any version.
-    $isDefaultInstall = $downloadDir -and -not $env:TAORC_REF -and -not $Uninstall
-    if ($isDefaultInstall -and $version -ne $InstallerVersion) {
-        Fail "this installer is v$InstallerVersion, but $ref holds v$version. Set `$env:TAORC_REF = `"v$InstallerVersion`" to install v$InstallerVersion, or fetch the installer from $ref to install v$version."
-    }
     $beginPrefix = "<!-- taorc:begin"
     $endMarker = "<!-- taorc:end -->"
 
