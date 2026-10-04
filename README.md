@@ -62,8 +62,8 @@ Most of the time you don't invoke it. With the skill installed, any code-writing
 
 The Claude Code plugin adds two conveniences on top:
 
-- **`/taorc-review [file|directory|PR#]`** reviews the current uncommitted diff by default, or the path or pull request you name. Claude Code lists it under the plugin's namespace as `/taorc:taorc-review`.
-- **The "Readable Code Review" output style** keeps review responses to findings and a short closing note, with no preamble. Select it from `/config` under **Output style**. It changes only how review findings are laid out, not how Claude writes code.
+- **`/taorc-review [file|directory|PR#]`** reviews the current uncommitted diff by default, or the path or pull request you name. Autocomplete lists it under the plugin's namespace as `/taorc:taorc-review`, and both names run it.
+- **The "Readable Code Review" output style** keeps review responses to findings and a short closing note, with no preamble. It is listed as `taorc:Readable Code Review` in `/output-style` and under **Output style** in `/config`. It changes only how review findings are laid out, not how Claude writes code.
 
 ## Results
 
