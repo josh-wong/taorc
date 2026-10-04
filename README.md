@@ -40,6 +40,14 @@ Pick the row that matches how your harness reads instructions or skills.
 
 The `curl | bash` and `install.ps1` installers default to `--project` scope (the current directory). They also accept `--global`, `--agents=<comma-list>` to install a subset of harnesses, `--detect` to refresh only adapters already installed, and `--uninstall` to remove everything taorc placed. See `scripts/install.sh --help` for the full reference. The installers only ever insert or replace text between `<!-- taorc:begin -->` and `<!-- taorc:end -->` markers, so the rest of an existing `AGENTS.md` or `CLAUDE.md` is never touched.
 
+The installers download `main` by default. To pin an install to a release, fetch the installer from that release's tag and set `TAORC_REF` to the same tag. You need both: the URL decides which installer runs, and `TAORC_REF` decides which files it installs.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/josh-wong/taorc/v1.0.0/scripts/install.sh | TAORC_REF=v1.0.0 bash
+```
+
+On Windows, set `$env:TAORC_REF = "v1.0.0"` before running `install.ps1` taken from the same tag. `TAORC_REF` also accepts a branch name or a commit SHA.
+
 Automated tests confirm that all ten supported harness targets get the right file at the right path. Four of them have also been verified by hand, by running the harness and confirming the skill changed its behavior: Claude Code, VS Code Copilot, Cursor, and Codex/opencode. The record, with versions and dates, is in [`docs/harness-verification.md`](docs/harness-verification.md).
 
 ## Using it
