@@ -193,9 +193,13 @@ if [ -z "$SOURCE_DIR" ]; then
     log "downloading ${ARCHIVE_URL}"
     curl -fsSL "$ARCHIVE_URL" -o "$DOWNLOAD_DIR/taorc.tar.gz" \
         || die "failed to download $ARCHIVE_URL (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass --source for an offline install.)"
-    tar -xzf "$DOWNLOAD_DIR/taorc.tar.gz" -C "$DOWNLOAD_DIR"
+    tar -xzf "$DOWNLOAD_DIR/taorc.tar.gz" -C "$DOWNLOAD_DIR" \
+        || die "tar exited $? while extracting the archive downloaded from $ARCHIVE_URL; see tar's error above (pass --source for an offline install)"
     SOURCE_DIR="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type d -name 'taorc-*' | head -n1)"
-    [ -n "$SOURCE_DIR" ] || die "could not locate extracted taorc source"
+    # Reachable even when tar succeeds: bsdtar, macOS's tar, exits 0 on an
+    # empty download.
+    [ -n "$SOURCE_DIR" ] \
+        || die "no taorc source found in the archive downloaded from $ARCHIVE_URL (the download may be empty or not a taorc archive; pass --source for an offline install)"
 fi
 
 [ -f "$SOURCE_DIR/VERSION" ] || die "$SOURCE_DIR does not look like a taorc checkout (no VERSION file)"
