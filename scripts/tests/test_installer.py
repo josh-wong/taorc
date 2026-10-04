@@ -332,41 +332,61 @@ NOT_AN_ARCHIVE = "<html>not an archive</html>"
 
 
 class ExtractionFailureCase:
-    """Each installer must stop and name extraction when tar fails.
+    """Each installer must stop with an error that names the download when
+    the downloaded file isn't a usable taorc archive.
 
-    Subclasses replace the download with a stub that "succeeds" with a file
-    that is not a gzip archive, the way an HTML error page would. Without an
-    explicit check, install.ps1 carried on past tar's failure and stopped one
-    step later with a misleading "could not locate extracted taorc source".
+    Subclasses replace the download with a stub that "succeeds" with the
+    content in $TAORC_TEST_PAGE, written byte for byte. Before #41, install.ps1
+    carried on past tar's failure and stopped one step later with a
+    misleading "could not locate extracted taorc source".
+
+    Assertions match only the start of each message, because PowerShell's
+    error view wraps long lines at the console width.
     """
 
-    def run_with_corrupt_download(
+    def run_with_downloaded_content(
         self, project_dir: Path, env: dict[str, str]
     ) -> subprocess.CompletedProcess:
         """Run the installer against project_dir with a download stub that
-        writes NOT_AN_ARCHIVE where the archive should go and reports
-        success. env is the environment to run with, TAORC_REF unset; the
-        stub may add to it. Returns the finished installer process."""
+        writes $TAORC_TEST_PAGE, with no trailing newline, where the archive
+        should go and reports success. env is the environment to run with,
+        TAORC_REF unset and TAORC_TEST_PAGE set; the stub may add to it.
+        Returns the finished installer process."""
         raise NotImplementedError
 
-    def test_corrupt_download_stops_with_extraction_error(self):
+    def run_installer_on(self, downloaded_content: str) -> tuple[int, str]:
+        """The installer's exit code and combined output after a download
+        that delivered downloaded_content."""
         with tempfile.TemporaryDirectory() as tmp:
             project_dir = Path(tmp) / "proj"
             project_dir.mkdir()
             env = {k: v for k, v in os.environ.items() if k != "TAORC_REF"}
-            installer_proc = self.run_with_corrupt_download(project_dir, env)
-        installer_output = installer_proc.stdout + installer_proc.stderr
-        self.assertNotEqual(installer_proc.returncode, 0, installer_output)
-        self.assertIn("while extracting the archive", installer_output)
-        self.assertNotIn("could not locate extracted taorc source", installer_output)
+            env["TAORC_TEST_PAGE"] = downloaded_content
+            installer_proc = self.run_with_downloaded_content(project_dir, env)
+        return installer_proc.returncode, installer_proc.stdout + installer_proc.stderr
+
+    def test_corrupt_download_stops_with_tar_error(self):
+        exit_code, installer_output = self.run_installer_on(NOT_AN_ARCHIVE)
+        self.assertNotEqual(exit_code, 0, installer_output)
+        self.assertIn("tar exited", installer_output)
+
+    def test_empty_download_stops_with_error_naming_the_download(self):
+        # GNU tar fails on an empty file and bsdtar (macOS, Windows) exits 0,
+        # so the installer legitimately stops at either message.
+        exit_code, installer_output = self.run_installer_on("")
+        self.assertNotEqual(exit_code, 0, installer_output)
+        named_the_download = (
+            "tar exited" in installer_output or "no taorc source found" in installer_output
+        )
+        self.assertTrue(named_the_download, installer_output)
 
 
 @unittest.skipUnless(
     WORKING_BASH and shutil.which("tar"), "needs a working bash interpreter and tar"
 )
 class BashExtractionFailureTest(ExtractionFailureCase, unittest.TestCase):
-    def run_with_corrupt_download(self, project_dir, env):
-        """Puts a stub curl first on PATH that writes NOT_AN_ARCHIVE to the
+    def run_with_downloaded_content(self, project_dir, env):
+        """Puts a stub curl first on PATH that writes $TAORC_TEST_PAGE to the
         file named by its -o argument and exits 0."""
         stub_dir = project_dir.parent / "bin"
         stub_dir.mkdir()
@@ -374,14 +394,13 @@ class BashExtractionFailureTest(ExtractionFailureCase, unittest.TestCase):
         stub_curl.write_text(
             "#!/bin/sh\n"
             'while [ "$#" -gt 0 ]; do\n'
-            '    if [ "$1" = "-o" ]; then printf \'%s\\n\' "$TAORC_TEST_PAGE" > "$2"; fi\n'
+            '    if [ "$1" = "-o" ]; then printf \'%s\' "$TAORC_TEST_PAGE" > "$2"; fi\n'
             "    shift\n"
             "done\n",
             encoding="utf-8",
         )
         stub_curl.chmod(0o755)
         env["PATH"] = f"{stub_dir}{os.pathsep}{env.get('PATH', '')}"
-        env["TAORC_TEST_PAGE"] = NOT_AN_ARCHIVE
         install_script = REPO_ROOT / "scripts" / "install.sh"
         return subprocess.run(
             [WORKING_BASH, str(install_script), "--dir", str(project_dir)],
@@ -394,16 +413,15 @@ class BashExtractionFailureTest(ExtractionFailureCase, unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("pwsh") and shutil.which("tar"), "needs pwsh and tar")
 class PowerShellExtractionFailureTest(ExtractionFailureCase, unittest.TestCase):
-    def run_with_corrupt_download(self, project_dir, env):
+    def run_with_downloaded_content(self, project_dir, env):
         """Shadows Invoke-WebRequest with a function that writes
-        NOT_AN_ARCHIVE to -OutFile and returns normally."""
-        env["TAORC_TEST_PAGE"] = NOT_AN_ARCHIVE
+        $TAORC_TEST_PAGE to -OutFile and returns normally."""
         env["TAORC_TEST_INSTALL_SCRIPT"] = str(REPO_ROOT / "scripts" / "install.ps1")
         env["TAORC_TEST_PROJECT_DIR"] = str(project_dir)
         command = (
             "function Invoke-WebRequest {"
             " param([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing)"
-            " Set-Content -LiteralPath $OutFile -Value $env:TAORC_TEST_PAGE };"
+            " Set-Content -LiteralPath $OutFile -Value $env:TAORC_TEST_PAGE -NoNewline };"
             " & $env:TAORC_TEST_INSTALL_SCRIPT -Dir $env:TAORC_TEST_PROJECT_DIR"
         )
         return subprocess.run(

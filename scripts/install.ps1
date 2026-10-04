@@ -120,15 +120,26 @@ try {
         }
         # tar's nonzero exit doesn't stop the script, so without this check a
         # failed extraction would surface one step later as a missing
-        # directory, hiding the real cause. The reset keeps a leftover exit
-        # code from the caller's session out of the check.
+        # directory, hiding the real cause. A real tar always sets
+        # $LASTEXITCODE; the reset covers an alias or function named tar,
+        # which wouldn't, leaving the caller's last exit code in its place.
         $global:LASTEXITCODE = 0
-        tar -xzf $archivePath -C $downloadDir.FullName
+        # "Continue" for this one command because Windows PowerShell 5.1 turns
+        # each line tar writes to a redirected stderr into an error record,
+        # which "Stop" would make fatal before the check below could run.
+        & {
+            $ErrorActionPreference = "Continue"
+            tar -xzf $archivePath -C $downloadDir.FullName
+        }
         if ($LASTEXITCODE -ne 0) {
             Fail "tar exited $LASTEXITCODE while extracting the archive downloaded from $archiveUrl; see tar's error above (pass -Source for an offline install)"
         }
+        # Reachable even when tar succeeds: bsdtar, the tar.exe Windows ships,
+        # exits 0 on an empty download.
         $extracted = Get-ChildItem -Path $downloadDir.FullName -Directory -Filter "taorc-*" | Select-Object -First 1
-        if (-not $extracted) { Fail "could not locate extracted taorc source" }
+        if (-not $extracted) {
+            Fail "no taorc source found in the archive downloaded from $archiveUrl (the download may be empty or not a taorc archive; pass -Source for an offline install)"
+        }
         $Source = $extracted.FullName
     }
 
