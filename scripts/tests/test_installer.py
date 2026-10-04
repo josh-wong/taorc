@@ -327,9 +327,9 @@ class DownloadUrlCase:
                 )
             return url_log.read_text(encoding="utf-8").strip()
 
-    def test_download_url_accepts_any_git_ref_and_defaults_to_main(self):
+    def test_download_url_accepts_any_git_ref_and_defaults_to_own_release_tag(self):
         cases = [
-            (None, f"{ARCHIVE_BASE_URL}/main.tar.gz"),
+            (None, f"{ARCHIVE_BASE_URL}/v{read_version()}.tar.gz"),
             ("main", f"{ARCHIVE_BASE_URL}/main.tar.gz"),
             ("feature/example", f"{ARCHIVE_BASE_URL}/feature/example.tar.gz"),
             ("v1.0.0", f"{ARCHIVE_BASE_URL}/v1.0.0.tar.gz"),
@@ -338,6 +338,19 @@ class DownloadUrlCase:
         for taorc_ref, expected_url in cases:
             with self.subTest(taorc_ref=taorc_ref):
                 self.assertEqual(self.requested_url(taorc_ref), expected_url)
+
+    def test_failed_default_download_says_release_tag_may_be_unpublished(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project_dir = Path(tmp) / "proj"
+            project_dir.mkdir()
+            url_log = Path(tmp) / "requested-url.txt"
+            installer_proc = self.run_with_download_stub(
+                project_dir, url_log, environ_without_taorc_ref()
+            )
+        installer_output = installer_proc.stdout + installer_proc.stderr
+        self.assertNotEqual(installer_proc.returncode, 0, installer_output)
+        # One word only: PowerShell's error view wraps long lines.
+        self.assertIn("published", installer_output)
 
 
 @unittest.skipUnless(WORKING_BASH, "no working bash interpreter is available")
@@ -377,7 +390,7 @@ INSTALLER_ERROR_PREFIX = "taorc-install: error:"
 
 # A fragment of the default download URL short enough that PowerShell's error
 # view, which wraps at word boundaries, keeps it on one line.
-DEFAULT_ARCHIVE_URL_FRAGMENT = "archive/main.tar.gz"
+DEFAULT_ARCHIVE_URL_FRAGMENT = f"archive/v{read_version()}.tar.gz"
 
 
 def gzipped_tar_without_taorc_folder() -> bytes:

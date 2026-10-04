@@ -35,9 +35,10 @@
 
 .NOTES
     Set the TAORC_REF environment variable to a branch, tag, or commit SHA,
-    such as v1.0.0, to download that ref instead of main when -Source is not
-    given. Fetch this script from the same ref you pin, or a newer installer
-    runs against older files.
+    such as main for unreleased changes, to download that ref when -Source
+    is not given. By default the installer downloads the release tag it
+    shipped with, so a script fetched from main installs the latest release
+    and one fetched from a tag installs that tag.
 #>
 
 [CmdletBinding()]
@@ -59,6 +60,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoSlug = "josh-wong/taorc"
+# Written by scripts/build.py from VERSION. Never edit it by hand.
+$InstallerVersion = "1.0.0"
 $AllAgents = @("claude", "copilot", "cursor", "cline", "windsurf", "gemini", "agents")
 
 function Write-Log([string]$Message) {
@@ -103,7 +106,17 @@ try {
         if (-not (Get-Command tar -CommandType Application -ErrorAction SilentlyContinue)) {
             Fail "tar is required to unpack taorc (or pass -Source for an offline install)"
         }
-        $ref = if ($env:TAORC_REF) { $env:TAORC_REF } else { "main" }
+        # Defaults to this installer's own release tag, so an installer
+        # fetched from a tag installs that release and one fetched from main
+        # installs the latest release, never unreleased work (#42).
+        if ($env:TAORC_REF) {
+            $ref = $env:TAORC_REF
+            $downloadHint = "check that TAORC_REF names an existing branch, tag, or commit; release tags start with v"
+        }
+        else {
+            $ref = "v$InstallerVersion"
+            $downloadHint = "the v$InstallerVersion tag may not be published yet; set `$env:TAORC_REF = `"main`" to install main instead"
+        }
         $downloadDir = New-Item -ItemType Directory -Path (Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid()))
         # The ref-agnostic archive path, not refs/heads/, so a release tag or a
         # commit SHA resolves as well as a branch.
@@ -114,7 +127,7 @@ try {
             Invoke-WebRequest -Uri $archiveUrl -OutFile $archivePath -UseBasicParsing
         }
         catch {
-            Fail "failed to download $archiveUrl (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass -Source for an offline install.)"
+            Fail "failed to download $archiveUrl ($downloadHint. Or pass -Source for an offline install.)"
         }
         # tar's nonzero exit doesn't stop the script, so without the check
         # below a failed extraction would surface one step later as a missing

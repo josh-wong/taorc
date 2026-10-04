@@ -34,13 +34,16 @@
 #
 # Environment:
 #   TAORC_REF         Branch, tag, or commit SHA to download when --source
-#                     is not given, such as v1.0.0. Default: main. Fetch
-#                     this script from the same ref you pin, or a newer
-#                     installer runs against older files.
+#                     is not given, such as main for unreleased changes.
+#                     Default: the release tag this script shipped with,
+#                     so a script fetched from main installs the latest
+#                     release and one fetched from a tag installs that tag.
 
 set -euo pipefail
 
 REPO_SLUG="josh-wong/taorc"
+# Written by scripts/build.py from VERSION. Never edit it by hand.
+INSTALLER_VERSION="1.0.0"
 ALL_AGENTS="claude copilot cursor cline windsurf gemini agents"
 
 usage() {
@@ -78,9 +81,10 @@ Usage:
 
 Environment:
   TAORC_REF         Branch, tag, or commit SHA to download when --source
-                    is not given, such as v1.0.0. Default: main. Fetch
-                    this script from the same ref you pin, or a newer
-                    installer runs against older files.
+                    is not given, such as main for unreleased changes.
+                    Default: the release tag this script shipped with,
+                    so a script fetched from main installs the latest
+                    release and one fetched from a tag installs that tag.
 EOF
 }
 
@@ -183,7 +187,15 @@ cleanup() {
 trap cleanup EXIT
 
 if [ -z "$SOURCE_DIR" ]; then
-    REF="${TAORC_REF:-main}"
+    # Defaults to this installer's own release tag, so an installer fetched
+    # from a tag installs that release and one fetched from main installs the
+    # latest release, never unreleased work (#42).
+    REF="${TAORC_REF:-v$INSTALLER_VERSION}"
+    if [ -n "${TAORC_REF:-}" ]; then
+        DOWNLOAD_HINT="check that TAORC_REF names an existing branch, tag, or commit; release tags start with v"
+    else
+        DOWNLOAD_HINT="the v$INSTALLER_VERSION tag may not be published yet; set TAORC_REF=main to install main instead"
+    fi
     command -v curl >/dev/null 2>&1 || die "curl is required to download taorc (or pass --source)"
     command -v tar >/dev/null 2>&1 || die "tar is required to unpack taorc (or pass --source)"
     DOWNLOAD_DIR="$(mktemp -d)"
@@ -192,7 +204,7 @@ if [ -z "$SOURCE_DIR" ]; then
     ARCHIVE_URL="https://github.com/${REPO_SLUG}/archive/${REF}.tar.gz"
     log "downloading ${ARCHIVE_URL}"
     curl -fsSL "$ARCHIVE_URL" -o "$DOWNLOAD_DIR/taorc.tar.gz" \
-        || die "failed to download $ARCHIVE_URL (check that TAORC_REF names an existing branch, tag, or commit; release tags start with v. Or pass --source for an offline install.)"
+        || die "failed to download $ARCHIVE_URL ($DOWNLOAD_HINT. Or pass --source for an offline install.)"
     tar -xzf "$DOWNLOAD_DIR/taorc.tar.gz" -C "$DOWNLOAD_DIR" \
         || die "tar exited $? while extracting the archive downloaded from $ARCHIVE_URL; see tar's error above (pass --source for an offline install)"
     SOURCE_DIR="$(find "$DOWNLOAD_DIR" -maxdepth 1 -type d -name 'taorc-*' | head -n1)"
