@@ -359,7 +359,7 @@ apply_block() {
 
 remove_block() {
     target="$1"
-    [ -f "$target" ] || return
+    [ -f "$target" ] || return 0
 
     has_begin=0
     grep -qF "$BEGIN_PREFIX" "$target" && has_begin=1
