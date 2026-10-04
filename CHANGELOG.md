@@ -8,11 +8,7 @@ For this project, a rule ID is part of the public interface. Deprecating a rule 
 
 ## [Unreleased]
 
-Nothing yet.
-
-## [1.0.0] - 2026-10-04
-
-The first public release.
+These changes will ship as 1.0.0, the first public release. The version heading and date are added on the day it is tagged.
 
 ### Added
 
@@ -49,5 +45,4 @@ These are the PRD §7 metrics. M1 to M4 come from the most recent eval run, [`ev
 - The test-writing (`T`) rubric score rests on four judgments from a single scenario.
 - `taorc-lint` covers Python and TypeScript/JavaScript only.
 
-[Unreleased]: https://github.com/josh-wong/taorc/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/josh-wong/taorc/releases/tag/v1.0.0
+[Unreleased]: https://github.com/josh-wong/taorc/commits/main

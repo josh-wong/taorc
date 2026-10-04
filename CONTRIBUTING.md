@@ -82,7 +82,7 @@ python evals/tests/test_judge.py -v
 
 Maintainers only. Releases follow semantic versioning, where a rule ID counts as public interface (see `CHANGELOG.md`).
 
-1. Move the `[Unreleased]` entries in `CHANGELOG.md` under a new version heading.
+1. In `CHANGELOG.md`, move the `[Unreleased]` entries under a new `## [X.Y.Z] - YYYY-MM-DD` heading dated the day you will tag, leave an empty `[Unreleased]` section above it, and update the link references at the bottom of the file.
 2. Set the new version in `VERSION` and in `metadata.version` in `skills/readable-code/SKILL.md`, then run `python scripts/build.py`.
 3. Merge to `main`, then push a `vX.Y.Z` tag. The release workflow validates the tree, checks that the tag matches `VERSION`, builds the skill `.zip`, and publishes a GitHub release with that version's `CHANGELOG.md` section as its notes.
 4. From a clean machine, confirm `npx skills add josh-wong/taorc` resolves and installs.
