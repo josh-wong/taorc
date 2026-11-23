@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to taorc are recorded here. Each release entry has the same sections as its GitHub release page (Features, Improvements, Bug fixes, Documentation, Known limitations, Downloads), because the release workflow publishes the entry as the release notes. The project uses [semantic versioning](https://semver.org/).
+All notable changes to taorc are recorded here. Each release entry has the same sections as its GitHub release page (Features, Improvements, Bug fixes, Documentation, Known limitations, Downloads, plus Success metrics when the release has eval results), because the release workflow publishes the entry as the release notes. The project uses [semantic versioning](https://semver.org/).
 
 `VERSION` is the single source for every version field. `scripts/build.py` copies it into the plugin and extension manifests, into each managed block's `<!-- taorc:begin vX.Y.Z -->` marker, and into each installer's own version line, and `scripts/validate.py` fails CI if any of them disagree. The skill's own `metadata.version` in `SKILL.md` is hand-written, so it is updated by hand and checked by the same gate.
 
@@ -12,7 +12,7 @@ For this project, a rule ID is part of the public interface. Deprecating a rule 
 
 This is the first release of **taorc**, an agent skill that makes AI coding agents write, comment, and review code so the next reader understands it quickly. It builds on the ideas in *The Art of Readable Code* (Boswell & Foucher, O'Reilly 2011) in original wording, and works in Claude Code, GitHub Copilot, Cursor, Codex, Gemini CLI, Cline, Windsurf, and any LLM you can give a system prompt. It is unofficial and contains no text from the book.
 
-## ✨ Features
+### ✨ Features
 
 This release includes the following features:
 
@@ -27,25 +27,25 @@ This release includes the following features:
 - **Examples.** `examples/before-after.md` has twenty original before/after pairs in nine languages, four of which show when *not* to apply a rule.
 - **Evals.** A ten-scenario benchmark harness, a 100-prompt trigger suite, automated scoring through `taorc-lint`, and a blind pairwise LLM judge. Every run is published with its raw completions under `evals/results/`.
 
-## 📈 Improvements
+### 📈 Improvements
 
-_Nothing to list – This is the initial release._
+*Nothing to list – This is the initial release.*
 
-## 🐛 Bug fixes
+### 🐛 Bug fixes
 
-_Nothing to list – This is the initial release._
+*Nothing to list – This is the initial release.*
 
-## 📚 Documentation
+### 📚 Documentation
 
 - A README, a `CONTRIBUTING.md` with the rule bar and stable-ID policy, a changelog, and `docs/harness-verification.md` recording the manual per-harness smoke tests.
 
-## 📊 Success metrics at release
+### 📊 Success metrics at release
 
 These are the PRD §7 metrics from the most recent eval run, [`evals/results/2026-09-03`](https://github.com/josh-wong/taorc/blob/v1.0.0/evals/results/2026-09-03/RESULTS.md). Read its "Reading this run" and "Known gaps" sections before quoting any number on its own.
 
 | Metric                             | Target                       | Result                                                                  | Status                                           |
 | ---------------------------------- | ---------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------ |
-| M1 — lint findings per 100 LOC     | ≥ 60% reduction              | −75.5% pooled; Claude −78.2%; GPT −4.6% on a baseline of one finding   | Pass pooled and on Claude; not measurable on GPT |
+| M1 — lint findings per 100 LOC     | ≥ 60% reduction              | −75.5% pooled; Claude −78.2%; GPT −4.6% on a baseline of one finding    | Pass pooled and on Claude; not measurable on GPT |
 | M2 — blind pairwise preference     | ≥ 70%                        | 68.4% as run; 72.2% excluding one pair the scorer could not parse       | Miss as run, pass corrected                      |
 | M3 — diff inflation on bugfixes    | ≤ 10%                        | Claude +232.8% as scored, −11.6% corrected; GPT +3.0%                   | Miss as scored, pass corrected                   |
 | M4 — trigger activation            | ≥ 90% fire / ≤ 10% false     | 100.0% on 60 positives / 0.0% on 40 negatives                           | Pass (carried forward, not re-measured)          |
@@ -56,18 +56,18 @@ These are the PRD §7 metrics from the most recent eval run, [`evals/results/202
 
 M4 was carried forward from the 2026-09-01 run and was not re-measured after the book-title sentence was dropped from the skill's `description`. That sentence was attribution only and none of the suite's prompts name the book, but the suite was not rerun against the final description.
 
-## ⚠️ Known limitations
+### ⚠️ Known limitations
 
 - The open-weights eval slot has not run yet, so `prompts/system-prompt.md` has not been validated end to end and every pairwise judgment rests on a single judge.
 - `evals/score.py` and `evals/judge.py` cannot parse a completion that comes back as a unified diff. One completion in the latest run did, and it alone accounts for the M2 and M3 misses as scored.
 - The test-writing (`T`) rubric score rests on four judgments from a single scenario.
 - `taorc-lint` covers Python and TypeScript/JavaScript only.
 
-## 📦 Downloads
+### 📦 Downloads
 
 | Platform                  | Downloadable                                                                                                                      |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **macOS, Linux, Windows** | [taorc-skill-v1.0.0.zip](https://github.com/josh-wong/taorc/releases/download/v1.0.0/taorc-skill-v1.0.0.zip) |
+| **macOS, Linux, Windows** | [taorc-skill-v1.0.0.zip](https://github.com/josh-wong/taorc/releases/download/v1.0.0/taorc-skill-v1.0.0.zip)                      |
 
 To install without the zip, run `npx skills add josh-wong/taorc`.
 
