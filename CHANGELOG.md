@@ -27,7 +27,7 @@ The first public release.
 
 ### Success metrics at release
 
-These are the PRD §7 metrics. M1 to M4 come from the most recent eval run, [`evals/results/2026-09-03`](https://github.com/josh-wong/taorc/blob/v1.0.0/evals/results/2026-09-03/RESULTS.md). M4 was carried forward from [`2026-09-01`](https://github.com/josh-wong/taorc/blob/v1.0.0/evals/results/2026-09-01/RESULTS.md) because the skill's `description` did not change between the two runs. Read the "Reading this run" and "Known gaps" sections of that `RESULTS.md` before quoting any of these numbers on their own.
+These are the PRD §7 metrics. M1 to M4 come from the most recent eval run, [`evals/results/2026-09-03`](https://github.com/josh-wong/taorc/blob/v1.0.0/evals/results/2026-09-03/RESULTS.md). M4 was carried forward from [`2026-09-01`](https://github.com/josh-wong/taorc/blob/v1.0.0/evals/results/2026-09-01/RESULTS.md) and was not re-measured after the final edit that dropped the book-title sentence from the skill's `description`. That sentence carried no trigger phrases, so the result is expected to hold. Read the "Reading this run" and "Known gaps" sections of that `RESULTS.md` before quoting any of these numbers on their own.
 
 | Metric                             | Target                       | Result                                                                                                        | Status                                                  |
 | ---------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
