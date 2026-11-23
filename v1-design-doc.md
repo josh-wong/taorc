@@ -219,7 +219,7 @@ description: >
   "make this readable", "clean up the comments", "review this for readability",
   "improve these names", or when removing AI-generated code tells such as
   step-by-step narration comments, banner comments, or empty names like data,
-  result, and handler. Based on The Art of Readable Code (Boswell & Foucher).
+  result, and handler.
 license: MIT
 metadata:
   version: "1.0.0"

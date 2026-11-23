@@ -8,7 +8,9 @@ For this project, a rule ID is part of the public interface. Deprecating a rule 
 
 ## [Unreleased]
 
-These changes will ship as 1.0.0, the first public release. The version heading and date are added on the day it is tagged.
+## [1.0.0] - 2026-11-23
+
+The first public release.
 
 ### Added
 
@@ -25,14 +27,14 @@ These changes will ship as 1.0.0, the first public release. The version heading 
 
 ### Success metrics at release
 
-These are the PRD §7 metrics. M1 to M4 come from the most recent eval run, [`evals/results/2026-09-03`](https://github.com/josh-wong/taorc/blob/v1.0.0/evals/results/2026-09-03/RESULTS.md). M4 was carried forward from [`2026-09-01`](https://github.com/josh-wong/taorc/blob/v1.0.0/evals/results/2026-09-01/RESULTS.md) because the skill's `description` did not change between the two runs. Read the "Reading this run" and "Known gaps" sections of that `RESULTS.md` before quoting any of these numbers on their own.
+These are the PRD §7 metrics. M1 to M4 come from the most recent eval run, [`evals/results/2026-09-03`](https://github.com/josh-wong/taorc/blob/v1.0.0/evals/results/2026-09-03/RESULTS.md). M4 was carried forward from [`2026-09-01`](https://github.com/josh-wong/taorc/blob/v1.0.0/evals/results/2026-09-01/RESULTS.md) and was not re-measured after the final edit that dropped the book-title sentence from the skill's `description`. That sentence was attribution only and none of the suite's prompts name the book, but the suite was not rerun against the final description. Read the "Reading this run" and "Known gaps" sections of that `RESULTS.md` before quoting any of these numbers on their own.
 
 | Metric                             | Target                       | Result                                                                                                        | Status                                                  |
 | ---------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
 | M1 — lint findings per 100 LOC     | ≥ 60% reduction              | −75.5% pooled; Claude −78.2%; GPT −4.6% on a baseline of one finding                                          | Pass pooled and on Claude; not measurable on GPT        |
 | M2 — blind pairwise preference     | ≥ 70%                        | 68.4% as run; 72.2% excluding one pair the scorer could not parse                                             | Miss as run, pass corrected                             |
 | M3 — diff inflation on bugfixes    | ≤ 10%                        | Claude +232.8% as scored, −11.6% corrected for the same parse failure; GPT +3.0%                              | Miss as scored, pass corrected                          |
-| M4 — trigger activation            | ≥ 90% fire / ≤ 10% false     | 100.0% on 60 positives / 0.0% on 40 negatives                                                                 | Pass                                                    |
+| M4 — trigger activation            | ≥ 90% fire / ≤ 10% false     | 100.0% on 60 positives / 0.0% on 40 negatives                                                                 | Pass (carried forward, not re-measured)                 |
 | M5 — linter false positives        | ≤ 5%                         | 0 findings across the 18 negative fixtures                                                                    | Pass                                                    |
 | M6 — `SKILL.md` size               | ≤ 5,000 tokens               | 4,234 tokens                                                                                                  | Pass                                                    |
 | M7 — harness coverage              | ≥ 10 placement / ≥ 4 by hand | 10 targets with automated placement checks; 4 verified by hand                                                | Pass                                                    |
@@ -45,4 +47,5 @@ These are the PRD §7 metrics. M1 to M4 come from the most recent eval run, [`ev
 - The test-writing (`T`) rubric score rests on four judgments from a single scenario.
 - `taorc-lint` covers Python and TypeScript/JavaScript only.
 
-[Unreleased]: https://github.com/josh-wong/taorc/commits/main
+[Unreleased]: https://github.com/josh-wong/taorc/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/josh-wong/taorc/releases/tag/v1.0.0

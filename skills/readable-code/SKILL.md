@@ -9,8 +9,7 @@ description: >
   "improve these names", "humanize this code", "make it look like a person wrote
   it", or when removing AI-generated code tells such as step-by-step narration
   comments, banner comments, boilerplate that reads as machine-written, or empty
-  names like data, result, and handler. Based on The Art of Readable Code
-  (Boswell & Foucher).
+  names like data, result, and handler.
 license: MIT
 metadata:
   version: "1.0.0"
@@ -37,6 +36,10 @@ The correction runs both ways, and overshooting costs the same reader the same
 time. Deleting the docstring that told a caller what comes back on empty input,
 or naming a subexpression that already read clearly, is not a cleaner file. It
 is a different kind of noise.
+
+The rules are original wording of ideas from *The Art of Readable Code*
+(Boswell & Foucher, O'Reilly 2011). Chapter numbers are in
+`references/chapter-map.md`.
 
 ## When this applies
 
