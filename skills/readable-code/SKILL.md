@@ -9,8 +9,7 @@ description: >
   "improve these names", "humanize this code", "make it look like a person wrote
   it", or when removing AI-generated code tells such as step-by-step narration
   comments, banner comments, boilerplate that reads as machine-written, or empty
-  names like data, result, and handler. Based on The Art of Readable Code
-  (Boswell & Foucher).
+  names like data, result, and handler.
 license: MIT
 metadata:
   version: "1.0.0"
