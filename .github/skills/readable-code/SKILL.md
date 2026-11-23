@@ -37,6 +37,10 @@ time. Deleting the docstring that told a caller what comes back on empty input,
 or naming a subexpression that already read clearly, is not a cleaner file. It
 is a different kind of noise.
 
+The rules are original wording of ideas from *The Art of Readable Code*
+(Boswell & Foucher, O'Reilly 2011). Chapter numbers are in
+`references/chapter-map.md`.
+
 ## When this applies
 
 Infer the mode from the task. Never ask which one to use.

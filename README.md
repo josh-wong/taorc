@@ -122,6 +122,10 @@ Known gaps in v1: the linter covers only Python and TypeScript/JavaScript, the l
 
 New rules are welcome if they clear a specific bar: a frontier model must not already follow the rule reliably, a human reviewer must be able to check it, and no existing rule may cover it. [`CONTRIBUTING.md`](CONTRIBUTING.md) explains the bar, the stable-ID policy, and the copyright rule every contribution has to follow.
 
+## Acknowledgements
+
+The ideas behind taorc come from *The Art of Readable Code* by Dustin Boswell and Trevor Foucher. Thank you to both authors for a book that makes the case for readable code clearly. The rule catalog is original work that cites the book by chapter number, and the next section explains how this project relates to it.
+
 ## Legal and copyright
 
 This project is **unofficial** and not affiliated with or endorsed by O'Reilly Media or the authors. No text from *The Art of Readable Code* appears anywhere in this repository. Every rule statement, rationale, and code example is original, and each rule cites the chapter it draws on so readers can go to the source rather than read a summary.
