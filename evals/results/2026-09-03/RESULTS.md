@@ -309,6 +309,11 @@ input would have cost roughly as much as the entire rest of this run to
 re-confirm a number that cannot have moved. It is carried, not re-measured,
 and that distinction is the reason this section exists.
 
+**Update before v1.0.0:** a later edit removed the trailing attribution sentence
+(the book title and authors) from the `description`, so the premise above no
+longer holds for the shipped skill. The result is still carried forward, not
+re-measured against the final description.
+
 ## Summary against PRD targets
 
 | Metric | Target | 2026-09-01 | 2026-09-03 | Status |
